@@ -1,0 +1,32 @@
+@import url("/shared/styles/site/common.css");
+@import url("/shared/styles/layout/layout_flex.css");
+@import url("/shared/styles/themes/theme_matrix.css");
+
+/* Shaarli-specific alterations */
+
+.linktitle a { text-decoration: none; color:#80AD48; }
+.linktitle a:hover { color:#F57900; }
+
+#navbar li a {
+font-size: 10pt;
+line-height: 130%;
+}
+
+#pageheader {
+padding-top: 5px;
+background: -webkit-gradient(linear, 0 0, 0 bottom, from(#aaf2aa), to(#114411));
+background: -webkit-linear-gradient(#aaf2aa, #114411);
+background: -moz-linear-gradient(#aaf2aa, #114411);
+background: -ms-linear-gradient(#aaf2aa, #114411);
+background: -o-linear-gradient(#aaf2aa, #114411);
+background: linear-gradient(#aaf2aa, #114411);
+}
+
+#pageheader #logo {
+    float: right;
+}
+#pageheader #kslogo {
+    float: left;
+}
+
+div#footer { margin-left: auto; margin-right: auto; }
