@@ -1701,7 +1701,7 @@ function renderPage()
                 $url='?'.smallHash($linkdate);
                 $title='Note: ';
             }
-            $link = array('linkdate'=>$linkdate,'title'=>$title,'url'=>$url,'description'=>$description,'tags'=>$tags,'private'=>$private);
+            $link = array('linkdate'=>$linkdate,'title'=>$title,'url'=>$url,'description'=>$description,'tags'=>$tags,'thumb_url'=>'','private'=>$private);
         }
 
         $PAGE = new pageBuilder;
