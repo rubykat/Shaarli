@@ -34,6 +34,7 @@ $GLOBALS['config']['UPDATECHECK_INTERVAL'] = 86400 ; // Updates check frequency 
                                           // Note: You must have publisher.php in the same directory as Shaarli index.php
 $GLOBALS['config']['ARCHIVE_ORG'] = false; // For each link, add a link to an archived version on archive.org
 $GLOBALS['config']['ENABLE_RSS_PERMALINKS'] = true;  // Enable RSS permalinks by default. This corresponds to the default behavior of shaarli before this was added as an option.
+$GLOBALS['config']['THUMBNAIL_WIDTH'] = 120; // Enable thumbnails in links.
 // -----------------------------------------------------------------------------------------------
 // You should not touch below (or at your own risks!)
 // Optional config file.
@@ -2095,7 +2096,7 @@ function computeThumbnail($url,$href=false)
     {
         $sign = hash_hmac('sha256', $url, $GLOBALS['salt']); // We use the salt to sign data (it's random, secret, and specific to each installation)
         return array('src'=>indexUrl().'?do=genthumbnail&hmac='.htmlspecialchars($sign).'&url='.urlencode($url),
-                     'href'=>$href,'width'=>'120','style'=>'height:auto;','alt'=>'thumbnail');
+                     'href'=>$href,'style'=>'height:auto;','alt'=>'thumbnail');
     }
     return array(); // No thumbnail.
 
@@ -2525,11 +2526,13 @@ function genThumbnail()
     echo $blankgif;
 }
 
-// Make a thumbnail of the image (to width: 120 pixels)
+// Make a thumbnail of the image (to width: THUMBNAIL_WIDTH pixels)
 // Returns true if success, false otherwise.
 function resizeImage($filepath)
 {
     if (!function_exists('imagecreatefromjpeg')) return false; // GD not present: no thumbnail possible.
+
+    $thumb_width = $GLOBALS['config']['THUMBNAIL_WIDTH'];
 
     // Trick: some stupid people rename GIF as JPEG... or else.
     // So we really try to open each image type whatever the extension is.
@@ -2543,8 +2546,8 @@ function resizeImage($filepath)
     $h = imagesy($im);
     $ystart = 0; $yheight=$h;
     if ($h>$w) { $ystart= ($h/2)-($w/2); $yheight=$w/2; }
-    $nw = 120;   // Desired width
-    $nh = min(floor(($h*$nw)/$w),120); // Compute new width/height, but maximum 120 pixels height.
+    $nw = $thumb_width;   // Desired width
+    $nh = min(floor(($h*$nw)/$w),$thumb_width); // Compute new width/height, but maximum $thumb_width pixels height.
     // Resize image:
     $im2 = imagecreatetruecolor($nw,$nh);
     imagecopyresampled($im2, $im, 0, 0, 0, $ystart, $nw, $nh, $w, $yheight);
