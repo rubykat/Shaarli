@@ -1141,7 +1141,7 @@ function showDailyRSS()
         {
             $l = $LINKSDB[$linkdate];
             $l['formatedDescription']=nl2br(keepMultipleSpaces(text2clickable(htmlspecialchars($l['description']))));
-            $l['thumbnail'] = thumbnail($l['url']);
+            $l['thumbnail'] = thumbnail($l['url'],isset($l['thumb_url']) ? $l['thumb_url'] : false);
             $l['localdate']=linkdate2locale($l['linkdate']);
             if (startsWith($l['url'],'?')) $l['url']=indexUrl().$l['url'];  // make permalink URL absolute
             $links[$linkdate]=$l;
@@ -1189,7 +1189,7 @@ function showDaily()
         uasort($taglist, 'strcasecmp');
         $linksToDisplay[$key]['taglist']=$taglist;
         $linksToDisplay[$key]['formatedDescription']=nl2br(keepMultipleSpaces(text2clickable(htmlspecialchars($link['description']))));
-        $linksToDisplay[$key]['thumbnail'] = thumbnail($link['url']);
+        $linksToDisplay[$key]['thumbnail'] = thumbnail($link['url'],isset($link['thumb_url']) ? $link['thumb_url'] : false);
         $linksToDisplay[$key]['localdate'] = linkdate2locale($link['linkdate']);
     }
 
@@ -1547,9 +1547,11 @@ function renderPage()
         $tags = trim(preg_replace('/\s\s+/',' ', $_POST['lf_tags'])); // Remove multiple spaces.
         $linkdate=$_POST['lf_linkdate'];
         $url = trim($_POST['lf_url']);
+        $thumb_url = trim($_POST['lf_thumb']);
         if (!startsWith($url,'http:') && !startsWith($url,'https:') && !startsWith($url,'ftp:') && !startsWith($url,'magnet:') && !startsWith($url,'?') && !startsWith($url,'javascript:'))
             $url = 'http://'.$url;
         $link = array('title'=>trim($_POST['lf_title']),'url'=>$url,'description'=>trim($_POST['lf_description']),'private'=>(isset($_POST['lf_private']) ? 1 : 0),
+                      'thumb_url'=>$thumb_url,
                       'linkdate'=>$linkdate,'tags'=>str_replace(',',' ',$tags));
         if ($link['title']=='') $link['title']=$link['url']; // If title is empty, use the URL as title.
         $LINKSDB[$linkdate] = $link;
@@ -1628,6 +1630,7 @@ function renderPage()
     {
         $link = $LINKSDB[$_GET['edit_link']];  // Read database
         if (!$link) { header('Location: ?'); exit; } // Link not found in database.
+        if (! isset($link['thumb_url'])) { $link['thumb_url'] = ''; } // add a blank thumb url
         $PAGE = new pageBuilder;
         $PAGE->assign('linkcount',count($LINKSDB));
         $PAGE->assign('link',$link);
@@ -1942,6 +1945,7 @@ function buildLinkList($PAGE,$LINKSDB)
         $link = $linksToDisplay[$keys[$i]];
         $link['description']=nl2br(keepMultipleSpaces(text2clickable(htmlspecialchars($link['description']))));
         $title=$link['title'];
+        $link['thumb_url'] = thumbnail(isset($link['thumb_url']) && $link['thumb_url'] ? $link['thumb_url'] : $link['url'] );
         $classLi =  $i%2!=0 ? '' : 'publicLinkHightLight';
         $link['class'] = ($link['private']==0 ? $classLi : 'private');
         $link['localdate']=linkdate2locale($link['linkdate']);
