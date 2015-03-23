@@ -9,6 +9,17 @@
 li.private .linktitle a { color:#003344; }
 li.private .linktitle a:visited { color:#006633; }
 
+#linklist li {
+    width: 47%;
+    display: inline-block;
+    border: solid 1px navy;
+}
+#linklist li .linkeditbuttons {
+    position: relative;
+    margin-left: -30px;
+    float: left;
+}
+
 #navbar li a {
 font-size: 10pt;
 line-height: 130%;
