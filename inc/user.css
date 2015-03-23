@@ -1,25 +1,28 @@
 @import url("/shared/styles/site/common.css");
 @import url("/shared/styles/layout/layout_flex.css");
-@import url("/shared/styles/themes/theme_matrix.css");
+@import url("/shared/styles/themes/theme_cloud.css");
 
 /* Shaarli-specific alterations */
 
-.linktitle a { text-decoration: none; color:#80AD48; }
-.linktitle a:hover { color:#F57900; }
+.linktitle a:hover { color:#6579F0; }
 
 #navbar li a {
 font-size: 10pt;
 line-height: 130%;
+color: navy;
+}
+#navbar li a:visited {
+color: #660066;
 }
 
 #pageheader {
 padding-top: 5px;
-background: -webkit-gradient(linear, 0 0, 0 bottom, from(#aaf2aa), to(#114411));
-background: -webkit-linear-gradient(#aaf2aa, #114411);
-background: -moz-linear-gradient(#aaf2aa, #114411);
-background: -ms-linear-gradient(#aaf2aa, #114411);
-background: -o-linear-gradient(#aaf2aa, #114411);
-background: linear-gradient(#aaf2aa, #114411);
+background: -webkit-gradient(linear, 0 0, 0 bottom, from(#aaaaf2), to(#111144));
+background: -webkit-linear-gradient(#aaaaf2, #111144);
+background: -moz-linear-gradient(#aaaaf2, #111144);
+background: -ms-linear-gradient(#aaaaf2, #111144);
+background: -o-linear-gradient(#aaaaf2, #111144);
+background: linear-gradient(#aaaaf2, #111144);
 }
 
 #pageheader #logo {
