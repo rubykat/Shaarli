@@ -6,6 +6,9 @@
 
 .linktitle a:hover { color:#6579F0; }
 
+li.private .linktitle a { color:#003344; }
+li.private .linktitle a:visited { color:#006633; }
+
 #navbar li a {
 font-size: 10pt;
 line-height: 130%;
