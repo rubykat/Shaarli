@@ -2096,7 +2096,8 @@ function computeThumbnail($url,$href=false)
     {
         $sign = hash_hmac('sha256', $url, $GLOBALS['salt']); // We use the salt to sign data (it's random, secret, and specific to each installation)
         return array('src'=>indexUrl().'?do=genthumbnail&hmac='.htmlspecialchars($sign).'&url='.urlencode($url),
-                     'href'=>$href,'style'=>'height:auto;','alt'=>'thumbnail');
+                     'href'=>$href,'width'=>$GLOBALS['config']['THUMBNAIL_WIDTH'],
+                     'style'=>'height:auto;','alt'=>'thumbnail');
     }
     return array(); // No thumbnail.
 
