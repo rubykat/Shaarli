@@ -1142,7 +1142,7 @@ function showDailyRSS()
         {
             $l = $LINKSDB[$linkdate];
             $l['formatedDescription']=nl2br(keepMultipleSpaces(text2clickable(htmlspecialchars($l['description']))));
-            $l['thumbnail'] = thumbnail($l['url'],isset($l['thumb_url']) ? $l['thumb_url'] : false);
+            $l['thumbnail'] = thumbnail(isset($l['thumb_url']) ? $l['thumb_url'] : $l['url'], $l['url']);
             $l['localdate']=linkdate2locale($l['linkdate']);
             if (startsWith($l['url'],'?')) $l['url']=indexUrl().$l['url'];  // make permalink URL absolute
             $links[$linkdate]=$l;
@@ -1190,7 +1190,7 @@ function showDaily()
         uasort($taglist, 'strcasecmp');
         $linksToDisplay[$key]['taglist']=$taglist;
         $linksToDisplay[$key]['formatedDescription']=nl2br(keepMultipleSpaces(text2clickable(htmlspecialchars($link['description']))));
-        $linksToDisplay[$key]['thumbnail'] = thumbnail($link['url'],isset($link['thumb_url']) ? $link['thumb_url'] : false);
+        $linksToDisplay[$key]['thumbnail'] = thumbnail(isset($link['thumb_url']) ? $link['thumb_url'] : $link['url'], $link['url']);
         $linksToDisplay[$key]['localdate'] = linkdate2locale($link['linkdate']);
     }
 
@@ -1946,7 +1946,7 @@ function buildLinkList($PAGE,$LINKSDB)
         $link = $linksToDisplay[$keys[$i]];
         $link['description']=nl2br(keepMultipleSpaces(text2clickable(htmlspecialchars($link['description']))));
         $title=$link['title'];
-        $link['thumb_url'] = thumbnail(isset($link['thumb_url']) && $link['thumb_url'] ? $link['thumb_url'] : $link['url'] );
+        $link['thumb_url'] = thumbnail(isset($link['thumb_url']) && $link['thumb_url'] ? $link['thumb_url'] : $link['url'], $link['url'] );
         $classLi =  $i%2!=0 ? '' : 'publicLinkHightLight';
         $link['class'] = ($link['private']==0 ? $classLi : 'private');
         $link['localdate']=linkdate2locale($link['linkdate']);
