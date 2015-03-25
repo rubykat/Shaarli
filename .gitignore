@@ -3,6 +3,7 @@ data
 tmp
 cache
 pagecache
+thumbnails
 
 # Eclipse project files
 .settings
