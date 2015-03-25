@@ -857,13 +857,30 @@ class linkdb implements Iterator, Countable, ArrayAccess
         // Same as above, we use UTF-8 conversion to handle various graphemes (i.e. cyrillic, or greek)
         // TODO: is $casesensitive ever true ?
         $t = str_replace(',',' ',($casesensitive?$tags:mb_convert_case($tags, MB_CASE_LOWER, 'UTF-8')));
-        $searchtags=explode(' ',$t);
+        $alltags=explode(' ',$t);
+        $searchtags=array();
+        $negativetags=array();
+        foreach($alltags as $at)
+        {
+            if ($at[0] == '-')
+            {
+                $negativetags[] = substr($at, 1);
+            }
+            else
+            {
+                $searchtags[] = $at;
+            }
+        }
         $filtered=array();
         foreach($this->links as $l)
         {
             $linktags = explode(' ',($casesensitive?$l['tags']:mb_convert_case($l['tags'], MB_CASE_LOWER, 'UTF-8')));
-            if (count(array_intersect($linktags,$searchtags)) == count($searchtags))
+            if (count(array_intersect($linktags,$searchtags)) == count($searchtags)
+                and
+                count(array_intersect($linktags,$negativetags)) == 0)
+            {
                 $filtered[$l['linkdate']] = $l;
+            }
         }
         krsort($filtered);
         return $filtered;
