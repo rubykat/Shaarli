@@ -4,6 +4,8 @@
 
 /* Shaarli-specific alterations */
 
+#pageheader #linkcount { color: #333366; }
+
 .linktitle a:hover { color:#6579F0; }
 
 li.private .linktitle a { color:#003344; }
@@ -11,6 +13,8 @@ li.private .linktitle a:visited { color:#006633; }
 
 #linklist li {
     border: solid 1px navy;
+    width: 45%;
+    display: inline-block;
 }
 #linklist li .linkeditbuttons {
     position: relative;
