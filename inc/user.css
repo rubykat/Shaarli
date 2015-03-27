@@ -13,8 +13,6 @@ li.private .linktitle a:visited { color:#006633; }
 
 #linklist li {
     border: solid 1px navy;
-    width: 45%;
-    display: inline-block;
 }
 #linklist li .linkeditbuttons {
     position: relative;
