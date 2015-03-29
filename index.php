@@ -2113,8 +2113,10 @@ function computeThumbnail($url,$href=false)
     {
         $sign = hash_hmac('sha256', $url, $GLOBALS['salt']); // We use the salt to sign data (it's random, secret, and specific to each installation)
         return array('src'=>indexUrl().'?do=genthumbnail&hmac='.htmlspecialchars($sign).'&url='.urlencode($url),
-                     'href'=>$href,'width'=>$GLOBALS['config']['THUMBNAIL_WIDTH'],
-                     'style'=>'height:auto;','alt'=>'thumbnail');
+                     'href'=>$href,
+                     //'width'=>$GLOBALS['config']['THUMBNAIL_WIDTH'],
+                     //'style'=>'height:auto;',
+                     'alt'=>'thumbnail');
     }
     return array(); // No thumbnail.
 
@@ -2563,9 +2565,18 @@ function resizeImage($filepath)
     $w = imagesx($im);
     $h = imagesy($im);
     $ystart = 0; $yheight=$h;
-    if ($h>$w) { $ystart= ($h/2)-($w/2); $yheight=$w/2; }
-    $nw = $thumb_width;   // Desired width
-    $nh = min(floor(($h*$nw)/$w),$thumb_width); // Compute new width/height, but maximum $thumb_width pixels height.
+    // make sure the thumbnail isn't larger than "thumb width" in either direction
+    // If the height is bigger than the width, use the thumb width as max height
+    if ($h > $w)
+    {
+        $nh = $thumb_width;
+        $nw = floor(($w*$nh)/$h); // proportional width
+    }
+    else
+    {
+        $nw = $thumb_width;   // Desired width
+        $nh = floor(($h*$nw)/$w); // proportional height
+    }
     // Resize image:
     $im2 = imagecreatetruecolor($nw,$nh);
     imagecopyresampled($im2, $im, 0, 0, 0, $ystart, $nw, $nh, $w, $yheight);
