@@ -4,6 +4,7 @@ tmp
 cache
 pagecache
 thumbnails
+craftmarks
 
 # Eclipse project files
 .settings
