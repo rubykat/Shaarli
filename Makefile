@@ -105,3 +105,7 @@ doc: clean
 		@rm -rf doc
 		@git clone https://github.com/shaarli/Shaarli.wiki.git doc
 		@rm -rf doc/.git
+
+htmldoc: 
+		$(shell for markdownfile in find doc/ -type f -name "*.md"; do pandoc -f markdown_github -t html5 -s -c "doc/github-markdown.css" -o $(basename $markdownfile .md).html "$markdownfile"; done)
+		
