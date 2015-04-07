@@ -1319,6 +1319,26 @@ function renderPage()
         $PAGE->renderPage('tagcloud');
         exit;
     }
+    // -------- Tag List
+    if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=taglist'))
+    {
+        $tags= $LINKSDB->allTags();
+        // We sort tags alphabetically, then choose a font size according to count.
+        // First, find max value.
+        $maxcount=0; foreach($tags as $key=>$value) $maxcount=max($maxcount,$value);
+        ksort($tags);
+        $tagList=array();
+        foreach($tags as $key=>$value)
+	// Tag font size scaling: default 15 and 30 logarithm bases affect scaling, 22 and 6 are arbitrary font sizes for max and min sizes.
+        {
+            $tagList[$key] = array('count'=>$value,'size'=>log($value, 15) / log($maxcount, 30) * (22-6) + 6);
+        }
+        $PAGE = new pageBuilder;
+        $PAGE->assign('linkcount',count($LINKSDB));
+        $PAGE->assign('tags',$tagList);
+        $PAGE->renderPage('taglist');
+        exit;
+    }
 
     // -------- User clicks on a tag in a link: The tag is added to the list of searched tags (searchtags=...)
     if (isset($_GET['addtag']))

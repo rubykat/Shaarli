@@ -1,0 +1,5 @@
+<ul id="listtag">
+  {loop="tags"}
+  <li><a href="?searchtags={$key|urlencode}">{$key|htmlspecialchars}</a> <span class="count">({$value.count})</span></li>
+  {/loop}
+</ul>
