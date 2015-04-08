@@ -5,7 +5,11 @@
 <div id="page-wrap">
 	<div id="pageheader">{include="page.header"}</div>
 <div class="taglist">
-{include="taglist.list"}
+<ul id="listtag">
+  {loop="tags"}
+  <li><a href="?searchtags={$key|urlencode}">{$key|htmlspecialchars}</a> <span class="count">({$value.count})</span></li>
+  {/loop}
+</ul>
 </div>
 {include="page.footer"}
 </div> <!-- page-wrap -->
