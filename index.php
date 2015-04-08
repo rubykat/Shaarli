@@ -1323,13 +1323,10 @@ function renderPage()
     if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=taglist'))
     {
         $tags= $LINKSDB->allTags();
-        // We sort tags alphabetically, then choose a font size according to count.
-        // First, find max value.
-        $maxcount=0; foreach($tags as $key=>$value) $maxcount=max($maxcount,$value);
+        // We sort tags alphabetically
         ksort($tags);
         $tagList=array();
         foreach($tags as $key=>$value)
-	// Tag font size scaling: default 15 and 30 logarithm bases affect scaling, 22 and 6 are arbitrary font sizes for max and min sizes.
         {
             $tagList[$key] = array('count'=>$value );
         }
@@ -1978,6 +1975,7 @@ function buildLinkList($PAGE,$LINKSDB)
     $i = ($page-1)*$_SESSION['LINKS_PER_PAGE']; // Start index.
     $end = $i+$_SESSION['LINKS_PER_PAGE'];
     $linkDisp=array(); // Links to display
+    $tagsDisp=array(); // Tags to display
     while ($i<$end && $i<count($keys))
     {
         $link = $linksToDisplay[$keys[$i]];
@@ -1990,9 +1988,25 @@ function buildLinkList($PAGE,$LINKSDB)
         $taglist = explode(' ',$link['tags']);
         uasort($taglist, 'strcasecmp');
         $link['taglist']=$taglist;
+        // add the current tags to the tag-list
+        $j = 0;
+        while ($j < count($taglist))
+        {
+            $tt = $taglist[$j];
+            if (@$tagsDisp[$tt] == 0)
+            {
+                $tagsDisp[$tt] = 1;
+            }
+            else
+            {
+                $tagsDisp[$tt]++;
+            }
+            $j++;
+        }
         $linkDisp[$keys[$i]] = $link;
         $i++;
     }
+    ksort($tagsDisp);
 
     // Compute paging navigation
     $searchterm= ( empty($_GET['searchterm']) ? '' : '&searchterm='.$_GET['searchterm'] );
@@ -2015,6 +2029,7 @@ function buildLinkList($PAGE,$LINKSDB)
     $PAGE->assign('redirector',empty($GLOBALS['redirector']) ? '' : $GLOBALS['redirector']); // Optional redirector URL.
     $PAGE->assign('token',$token);
     $PAGE->assign('links',$linkDisp);
+    $PAGE->assign('alltags',$tagsDisp);
     return;
 }
 

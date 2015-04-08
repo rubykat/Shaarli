@@ -379,6 +379,24 @@ h1 {
     background: linear-gradient(#F2F2F2, #ffffff);
 }
 
+/* for tags in listlinks */
+#alltags {
+    width: 20%;
+    float: left;
+}
+#alltags ul {
+    margin: 1em;
+}
+#alltags ul li {
+    list-style: disc inside none;
+    line-height: 130%;
+}
+
+#linklist {
+    width: 80%;
+    float: left;
+}
+
 /*
 #linklist li.publicLinkHightLight:hover, #linklist li:hover {
     background: #E9FFCE;
@@ -576,6 +594,20 @@ a.qrcode img {
     color: black;
     text-decoration: none;
 }
+
+/* for taglist page */
+.taglist ul {
+    -moz-column-count: 4;
+    -webkit-column-count: 4;
+    -o-column-count: 4;
+    column-count: 4;
+}
+
+.taglist li {
+    font-size: 1.2em;
+    list-style: disc inside none;
+}
+
 
 #install {
     margin: 0 20px;

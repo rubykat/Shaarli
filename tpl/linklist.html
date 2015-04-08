@@ -11,6 +11,13 @@
     </div>
 </div>
 
+<div id="alltags">
+<ul id="listtag">
+  {loop="alltags"}
+  <li><a href="?searchtags={$key|urlencode}">{$key|htmlspecialchars}</a> <span class="count">({$value})</span></li>
+  {/loop}
+</ul>
+</div>
 <div id="linklist">
 
     {include="linklist.paging"}
