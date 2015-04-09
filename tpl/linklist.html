@@ -14,7 +14,7 @@
 <div id="alltags">
 <ul id="listtag">
   {loop="alltags"}
-  <li><a href="?searchtags={$key|urlencode}">{$key|htmlspecialchars}</a> <span class="count">({$value})</span></li>
+  <li><a href="?addtag={$key|urlencode}">{$key|htmlspecialchars}</a> <span class="count">({$value})</span></li>
   {/loop}
 </ul>
 </div>
