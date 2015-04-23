@@ -34,6 +34,7 @@ $GLOBALS['config']['UPDATECHECK_INTERVAL'] = 86400 ; // Updates check frequency 
                                           // Note: You must have publisher.php in the same directory as Shaarli index.php
 $GLOBALS['config']['ARCHIVE_ORG'] = false; // For each link, add a link to an archived version on archive.org
 $GLOBALS['config']['ENABLE_RSS_PERMALINKS'] = true;  // Enable RSS permalinks by default. This corresponds to the default behavior of shaarli before this was added as an option.
+$GLOBALS['config']['HIDE_PUBLIC_LINKS'] = false;
 // -----------------------------------------------------------------------------------------------
 // You should not touch below (or at your own risks!)
 // Optional config file.
@@ -307,9 +308,10 @@ function autoLocale()
     {   // (It's a bit crude, but it works very well. Preferred language is always presented first.)
         if (preg_match('/([a-z]{2})-?([a-z]{2})?/i',$_SERVER['HTTP_ACCEPT_LANGUAGE'],$matches)) {
             $loc = $matches[1] . (!empty($matches[2]) ? '_' . strtoupper($matches[2]) : '');
-            $attempts = array($loc, str_replace('_', '-', $loc),
-                $loc . '_' . strtoupper($loc), $loc . '_' . $loc,
-                $loc . '-' . strtoupper($loc), $loc . '-' . $loc);
+            $attempts = array($loc.'.UTF-8', $loc, str_replace('_', '-', $loc).'.UTF-8', str_replace('_', '-', $loc),
+                $loc . '_' . strtoupper($loc).'.UTF-8', $loc . '_' . strtoupper($loc), 
+                $loc . '_' . $loc.'.UTF-8', $loc . '_' . $loc, $loc . '-' . strtoupper($loc).'.UTF-8', 
+                $loc . '-' . strtoupper($loc), $loc . '-' . $loc.'.UTF-8', $loc . '-' . $loc);
         }
     }
     setlocale(LC_TIME, $attempts);  // LC_TIME = Set local for date/time format only.
@@ -1458,6 +1460,7 @@ function renderPage()
             $GLOBALS['privateLinkByDefault']=!empty($_POST['privateLinkByDefault']);
             $GLOBALS['config']['ENABLE_RSS_PERMALINKS']= !empty($_POST['enableRssPermalinks']);
             $GLOBALS['config']['ENABLE_UPDATECHECK'] = !empty($_POST['updateCheck']);
+            $GLOBALS['config']['HIDE_PUBLIC_LINKS'] = !empty($_POST['hidePublicLinks']);
             writeConfig();
             echo '<script>alert("Configuration was saved.");document.location=\'?do=tools\';</script>';
             exit;
@@ -1775,7 +1778,6 @@ HTML;
 
     // -------- Otherwise, simply display search form and links:
     $PAGE = new pageBuilder;
-    $PAGE->assign('linkcount',count($LINKSDB));
     buildLinkList($PAGE,$LINKSDB); // Compute list of links to display
     $PAGE->renderPage('linklist');
     exit;
@@ -1899,8 +1901,12 @@ function buildLinkList($PAGE,$LINKSDB)
         }
         $search_type='permalink';
     }
+    // We chose to disable all private links and the user isn't logged in, do not return any link.
+    else if ($GLOBALS['config']['HIDE_PUBLIC_LINKS'] && !isLoggedIn())
+        $linksToDisplay = array();
     else
         $linksToDisplay = $LINKSDB;  // Otherwise, display without filtering.
+
 
     // Option: Show only private links
     if (!empty($_SESSION['privateonly']))
@@ -2328,6 +2334,7 @@ function writeConfig()
     $config .= '$GLOBALS[\'privateLinkByDefault\']='.var_export($GLOBALS['privateLinkByDefault'],true).'; ';
     $config .= '$GLOBALS[\'config\'][\'ENABLE_RSS_PERMALINKS\']='.var_export($GLOBALS['config']['ENABLE_RSS_PERMALINKS'], true).'; ';
     $config .= '$GLOBALS[\'config\'][\'ENABLE_UPDATECHECK\']='.var_export($GLOBALS['config']['ENABLE_UPDATECHECK'], true).'; ';
+    $config .= '$GLOBALS[\'config\'][\'HIDE_PUBLIC_LINKS\']='.var_export($GLOBALS['config']['HIDE_PUBLIC_LINKS'], true).'; ';
     $config .= ' ?>';
     if (!file_put_contents($GLOBALS['config']['CONFIG_FILE'],$config) || strcmp(file_get_contents($GLOBALS['config']['CONFIG_FILE']),$config)!=0)
     {
