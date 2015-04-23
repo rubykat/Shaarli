@@ -34,7 +34,8 @@ $GLOBALS['config']['UPDATECHECK_INTERVAL'] = 86400 ; // Updates check frequency 
                                           // Note: You must have publisher.php in the same directory as Shaarli index.php
 $GLOBALS['config']['ARCHIVE_ORG'] = false; // For each link, add a link to an archived version on archive.org
 $GLOBALS['config']['ENABLE_RSS_PERMALINKS'] = true;  // Enable RSS permalinks by default. This corresponds to the default behavior of shaarli before this was added as an option.
-$GLOBALS['config']['THUMBNAIL_WIDTH'] = 120; // Enable thumbnails in links.
+$GLOBALS['config']['THUMBNAIL_WIDTH'] = 120;
+$GLOBALS['config']['HIDE_PUBLIC_LINKS'] = false;
 // -----------------------------------------------------------------------------------------------
 // You should not touch below (or at your own risks!)
 // Optional config file.
@@ -303,12 +304,18 @@ function keepMultipleSpaces($text)
 // (Note that is may not work on your server if the corresponding local is not installed.)
 function autoLocale()
 {
-    $loc='en_US'; // Default if browser does not send HTTP_ACCEPT_LANGUAGE
+    $attempts = array('en_US'); // Default if browser does not send HTTP_ACCEPT_LANGUAGE
     if (isset($_SERVER['HTTP_ACCEPT_LANGUAGE'])) // e.g. "fr,fr-fr;q=0.8,en;q=0.5,en-us;q=0.3"
     {   // (It's a bit crude, but it works very well. Preferred language is always presented first.)
-        if (preg_match('/([a-z]{2}(-[a-z]{2})?)/i',$_SERVER['HTTP_ACCEPT_LANGUAGE'],$matches)) $loc=$matches[1];
+        if (preg_match('/([a-z]{2})-?([a-z]{2})?/i',$_SERVER['HTTP_ACCEPT_LANGUAGE'],$matches)) {
+            $loc = $matches[1] . (!empty($matches[2]) ? '_' . strtoupper($matches[2]) : '');
+            $attempts = array($loc.'.UTF-8', $loc, str_replace('_', '-', $loc).'.UTF-8', str_replace('_', '-', $loc),
+                $loc . '_' . strtoupper($loc).'.UTF-8', $loc . '_' . strtoupper($loc), 
+                $loc . '_' . $loc.'.UTF-8', $loc . '_' . $loc, $loc . '-' . strtoupper($loc).'.UTF-8', 
+                $loc . '-' . strtoupper($loc), $loc . '-' . $loc.'.UTF-8', $loc . '-' . $loc);
+        }
     }
-    setlocale(LC_TIME,$loc);  // LC_TIME = Set local for date/time format only.
+    setlocale(LC_TIME, $attempts);  // LC_TIME = Set local for date/time format only.
 }
 
 // ------------------------------------------------------------------------------------------
@@ -550,7 +557,7 @@ function endsWith($haystack,$needle,$case=true)
 function linkdate2timestamp($linkdate)
 {
     $Y=$M=$D=$h=$m=$s=0;
-    $r = sscanf($linkdate,'%4d%2d%2d_%2d%2d%2d',$Y,$M,$D,$h,$m,$s);
+    sscanf($linkdate,'%4d%2d%2d_%2d%2d%2d',$Y,$M,$D,$h,$m,$s);
     return mktime($h,$m,$s,$M,$D,$Y);
 }
 
@@ -566,16 +573,6 @@ function linkdate2rfc822($linkdate)
 function linkdate2iso8601($linkdate)
 {
     return date('c',linkdate2timestamp($linkdate)); // 'c' is for ISO 8601 date format.
-}
-
-/*  Converts a linkdate time (YYYYMMDD_HHMMSS) of an article to a localized date format.
-    (used to display link date on screen)
-    The date format is automatically chosen according to locale/languages sniffed from browser headers (see autoLocale()). */
-function linkdate2locale($linkdate)
-{
-    return utf8_encode(strftime('%c',linkdate2timestamp($linkdate))); // %c is for automatic date format according to locale.
-    // Note that if you use a locale which is not installed on your webserver,
-    // the date will not be displayed in the chosen locale, but probably in US notation.
 }
 
 // Parse HTTP response headers and return an associative array.
@@ -1160,7 +1157,7 @@ function showDailyRSS()
             $l = $LINKSDB[$linkdate];
             $l['formatedDescription']=nl2br(keepMultipleSpaces(text2clickable(htmlspecialchars($l['description']))));
             $l['thumbnail'] = thumbnail(isset($l['thumb_url']) ? $l['thumb_url'] : $l['url'], $l['url']);
-            $l['localdate']=linkdate2locale($l['linkdate']);
+            $l['timestamp'] = linkdate2timestamp($l['linkdate']);
             if (startsWith($l['url'],'?')) $l['url']=indexUrl().$l['url'];  // make permalink URL absolute
             $links[$linkdate]=$l;
         }
@@ -1208,7 +1205,7 @@ function showDaily()
         $linksToDisplay[$key]['taglist']=$taglist;
         $linksToDisplay[$key]['formatedDescription']=nl2br(keepMultipleSpaces(text2clickable(htmlspecialchars($link['description']))));
         $linksToDisplay[$key]['thumbnail'] = thumbnail(isset($link['thumb_url']) ? $link['thumb_url'] : $link['url'], $link['url']);
-        $linksToDisplay[$key]['localdate'] = linkdate2locale($link['linkdate']);
+        $linksToDisplay[$key]['timestamp'] = linkdate2timestamp($link['linkdate']);
     }
 
     /* We need to spread the articles on 3 columns.
@@ -1498,6 +1495,7 @@ function renderPage()
             $GLOBALS['privateLinkByDefault']=!empty($_POST['privateLinkByDefault']);
             $GLOBALS['config']['ENABLE_RSS_PERMALINKS']= !empty($_POST['enableRssPermalinks']);
             $GLOBALS['config']['ENABLE_UPDATECHECK'] = !empty($_POST['updateCheck']);
+            $GLOBALS['config']['HIDE_PUBLIC_LINKS'] = !empty($_POST['hidePublicLinks']);
             writeConfig();
             echo '<script>alert("Configuration was saved.");document.location=\'?do=tools\';</script>';
             exit;
@@ -1818,7 +1816,6 @@ HTML;
 
     // -------- Otherwise, simply display search form and links:
     $PAGE = new pageBuilder;
-    $PAGE->assign('linkcount',count($LINKSDB));
     buildLinkList($PAGE,$LINKSDB); // Compute list of links to display
     $PAGE->renderPage('linklist');
     exit;
@@ -1942,8 +1939,12 @@ function buildLinkList($PAGE,$LINKSDB)
         }
         $search_type='permalink';
     }
+    // We chose to disable all private links and the user isn't logged in, do not return any link.
+    else if ($GLOBALS['config']['HIDE_PUBLIC_LINKS'] && !isLoggedIn())
+        $linksToDisplay = array();
     else
         $linksToDisplay = $LINKSDB;  // Otherwise, display without filtering.
+
 
     // Option: Show only private links
     if (!empty($_SESSION['privateonly']))
@@ -1984,10 +1985,16 @@ function buildLinkList($PAGE,$LINKSDB)
         $link['thumb_url'] = thumbnail(isset($link['thumb_url']) && $link['thumb_url'] ? $link['thumb_url'] : $link['url'], $link['url'] );
         $classLi =  $i%2!=0 ? '' : 'publicLinkHightLight';
         $link['class'] = ($link['private']==0 ? $classLi : 'private');
-        $link['localdate']=linkdate2locale($link['linkdate']);
+        $link['timestamp']=linkdate2timestamp($link['linkdate']);
         $taglist = explode(' ',$link['tags']);
         uasort($taglist, 'strcasecmp');
         $link['taglist']=$taglist;
+
+        if ($link["url"][0] === '?' && // Check for both signs of a note: starting with ? and 7 chars long. I doubt that you'll post any links that look like this.
+            strlen($link["url"]) === 7) {
+            $link["url"] = indexUrl() . $link["url"];
+        }
+        
         // add the current tags to the tag-list
         $j = 0;
         while ($j < count($taglist))
@@ -2387,6 +2394,7 @@ function writeConfig()
     $config .= '$GLOBALS[\'privateLinkByDefault\']='.var_export($GLOBALS['privateLinkByDefault'],true).'; ';
     $config .= '$GLOBALS[\'config\'][\'ENABLE_RSS_PERMALINKS\']='.var_export($GLOBALS['config']['ENABLE_RSS_PERMALINKS'], true).'; ';
     $config .= '$GLOBALS[\'config\'][\'ENABLE_UPDATECHECK\']='.var_export($GLOBALS['config']['ENABLE_UPDATECHECK'], true).'; ';
+    $config .= '$GLOBALS[\'config\'][\'HIDE_PUBLIC_LINKS\']='.var_export($GLOBALS['config']['HIDE_PUBLIC_LINKS'], true).'; ';
     $config .= ' ?>';
     if (!file_put_contents($GLOBALS['config']['CONFIG_FILE'],$config) || strcmp(file_get_contents($GLOBALS['config']['CONFIG_FILE']),$config)!=0)
     {
