@@ -1341,14 +1341,17 @@ function renderPage()
         if (empty($_SERVER['HTTP_REFERER'])) { header('Location: ?searchtags='.urlencode($_GET['addtag'])); exit; } // In case browser does not send HTTP_REFERER
         parse_str(parse_url($_SERVER['HTTP_REFERER'],PHP_URL_QUERY), $params);
 
-        // Check if this tag is already in the search query and ignore it if it is.
-        // Each tag is always separated by a space
-        $current_tags = explode(' ', $params['searchtags']);
-        $addtag = true;
-        foreach ($current_tags as $value) {
-            if ($value === $_GET['addtag']) {
-                $addtag = false;
-                break;
+        if (!empty($params['searchtags']))
+        {
+            // Check if this tag is already in the search query and ignore it if it is.
+            // Each tag is always separated by a space
+            $current_tags = explode(' ', $params['searchtags']);
+            $addtag = true;
+            foreach ($current_tags as $value) {
+                if ($value === $_GET['addtag']) {
+                    $addtag = false;
+                    break;
+                }
             }
         }
         // Append the tag if necessary
