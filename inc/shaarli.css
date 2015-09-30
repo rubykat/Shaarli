@@ -221,8 +221,16 @@ h1 {
     margin-left:24px;
 }
 
+.tagfilter div.awesomplete {
+    width: 15%;
+}
+
 .tagfilter #tagfilter_value {
-    width: 10%;
+    display: inline;
+}
+
+.tagfilter li {
+    color: black;
 }
 
 .tagfilter input.bigbutton, .searchform input.bigbutton, .addform input.bigbutton {
@@ -339,6 +347,17 @@ h1 {
     font-size: inherit;
 }
 
+#headerform label {
+    cursor: pointer;
+    margin-right: 10px;
+}
+
+#headerform label[for=longlastingsession] {
+    display: block;
+    width: 100%;
+    margin-top: 5px;
+}
+
 #toolsdiv {
     color: #ffffff;
     padding: 5px 5px 5px 5px;
@@ -359,6 +378,7 @@ h1 {
 }
 
 #editlinkform label {
+    cursor: pointer;
     color: #ffffff;
 }
 
@@ -957,6 +977,11 @@ div.dailyNoEntry {
 
 @media handheld, only screen and (max-width: 480px), only screen and (max-device-width: 854px) {
     /* A few fixes for mobile devices (far from perfect). */
+
+    .tagfilter div.awesomplete {
+        width: 70%;
+    }
+
     .nomobile {
 	display: none;
     }
@@ -973,6 +998,20 @@ div.dailyNoEntry {
 	padding: 5px;
 	border-radius: 3px 3px 3px 3px;
 	margin: 3px;
+    }
+
+    #headerform label {
+    width: 100%;
+    display: block;
+    height: auto;
+    line-height: 25px;
+    padding-bottom: 10px;
+    }
+
+    #headerform label input[type=text],
+    #headerform label input[type=password]{
+    float: right;
+    width: 70%;
     }
 
     .searchform, .tagfilter {

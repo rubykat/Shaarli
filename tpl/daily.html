@@ -13,7 +13,7 @@
 	  <a href="?do=dailyrss" title="1 RSS entry per day"><img src="images/feed-icon-14x14.png#" alt="rss_feed">Daily RSS Feed</a>
     </div>
     <div class="dailyTitle"><img src="../images/floral_left.png" width="51" height="50" class="nomobile" alt="floral_left"> The Daily Shaarli <img src="../images/floral_right.png" width="51" height="50" class="nomobile" alt="floral_right"></div>
-    <div class="dailyDate"><span class="nomobile">&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;</span> {$day} <span class="nomobile">&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;</span></div>
+    <div class="dailyDate"><span class="nomobile">&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;</span> {function="strftime('%A %d, %B %Y', $day)"} <span class="nomobile">&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;</span></div>
     <div class="clear"></div>
 
     {if="$linksToDisplay"}
@@ -36,12 +36,12 @@
                         {if="$link.tags"}
                             <div class="dailyEntryTags">
                                 {loop="link.taglist"}
-                                    {$value|htmlspecialchars} -
+                                    {$value} -
                                 {/loop}
                             </div>
                         {/if}
                         <div class="dailyEntryTitle">
-                            <a href="{$link.url}">{$link.title|htmlspecialchars}</a>
+                            <a href="{$link.url}">{$link.title}</a>
                         </div>
                         {if="$link.thumbnail"}
                             <div class="dailyEntryThumbnail">{$link.thumbnail}</div>

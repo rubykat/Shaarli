@@ -16,5 +16,8 @@ pagecache
 composer.lock
 /vendor/
 
-# Ignore test output
+# Ignore test data & output
+coverage
+tests/datastore.php
+tests/dummycache/
 phpmd.html
