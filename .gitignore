@@ -16,8 +16,11 @@ pagecache
 composer.lock
 /vendor/
 
-# Ignore test data & output
+# Ignore development and test resources
 coverage
-tests/datastore.php
-tests/dummycache/
+doxygen
+sandbox
 phpmd.html
+
+# Ignore user plugin configuration
+plugins/*/config.php

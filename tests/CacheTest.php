@@ -11,10 +11,10 @@ require_once 'application/Cache.php';
 /**
  * Unitary tests for cached pages
  */
-class CachedTest extends PHPUnit_Framework_TestCase
+class CacheTest extends PHPUnit_Framework_TestCase
 {
     // test cache directory
-    protected static $testCacheDir = 'tests/dummycache';
+    protected static $testCacheDir = 'sandbox/dummycache';
 
     // dummy cached file names / content
     protected static $pages = array('a', 'toto', 'd7b59c');
@@ -30,11 +30,20 @@ class CachedTest extends PHPUnit_Framework_TestCase
         } else {
             array_map('unlink', glob(self::$testCacheDir.'/*'));
         }
-        
+
         foreach (self::$pages as $page) {
             file_put_contents(self::$testCacheDir.'/'.$page.'.cache', $page);
         }
         file_put_contents(self::$testCacheDir.'/intru.der', 'ShouldNotBeThere');
+    }
+
+    /**
+     * Remove dummycache folder after each tests.
+     */
+    public function tearDown()
+    {
+        array_map('unlink', glob(self::$testCacheDir.'/*'));
+        rmdir(self::$testCacheDir);
     }
 
     /**
@@ -56,7 +65,7 @@ class CachedTest extends PHPUnit_Framework_TestCase
     public function testPurgeCachedPagesMissingDir()
     {
         $this->assertEquals(
-            'Cannot purge tests/dummycache_missing: no directory',
+            'Cannot purge sandbox/dummycache_missing: no directory',
             purgeCachedPages(self::$testCacheDir.'_missing')
         );
     }

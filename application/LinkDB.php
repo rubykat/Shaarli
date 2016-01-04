@@ -17,8 +17,10 @@
  *  - private:  Is this link private? 0=no, other value=yes
  *  - tags:     tags attached to this entry (separated by spaces)
  *  - title     Title of the link
- *  - url       URL of the link. Can be absolute or relative.
+ *  - url       URL of the link. Used for displayable links (no redirector, relative, etc.).
+ *              Can be absolute or relative.
  *              Relative URLs are permalinks (e.g.'?m-ukcw')
+ *  - real_url  Absolute processed URL.
  *
  * Implements 3 interfaces:
  *  - ArrayAccess: behaves like an associative array;
@@ -57,18 +59,25 @@ class LinkDB implements Iterator, Countable, ArrayAccess
     // Hide public links
     private $_hidePublicLinks;
 
+    // link redirector set in user settings.
+    private $_redirector;
+
     /**
      * Creates a new LinkDB
      *
      * Checks if the datastore exists; else, attempts to create a dummy one.
      *
-     * @param $isLoggedIn is the user logged in?
+     * @param string  $datastore       datastore file path.
+     * @param boolean $isLoggedIn      is the user logged in?
+     * @param boolean $hidePublicLinks if true all links are private.
+     * @param string  $redirector      link redirector set in user settings.
      */
-    function __construct($datastore, $isLoggedIn, $hidePublicLinks)
+    function __construct($datastore, $isLoggedIn, $hidePublicLinks, $redirector = '')
     {
         $this->_datastore = $datastore;
         $this->_loggedIn = $isLoggedIn;
         $this->_hidePublicLinks = $hidePublicLinks;
+        $this->_redirector = $redirector;
         $this->_checkDB();
         $this->_readDB();
     }
@@ -212,11 +221,7 @@ You use the community supported version of the original Shaarli project, by Seba
         $this->_links[$link['linkdate']] = $link;
 
         // Write database to disk
-        // TODO: raise an exception if the file is not write-able
-        file_put_contents(
-            $this->_datastore,
-            self::$phpPrefix.base64_encode(gzdeflate(serialize($this->_links))).self::$phpSuffix
-        );
+        $this->writeDB();
     }
 
     /**
@@ -263,8 +268,37 @@ You use the community supported version of the original Shaarli project, by Seba
 
         // Escape links data
         foreach($this->_links as &$link) { 
-            sanitizeLink($link); 
+            sanitizeLink($link);
+            // Do not use the redirector for internal links (Shaarli note URL starting with a '?').
+            if (!empty($this->_redirector) && !startsWith($link['url'], '?')) {
+                $link['real_url'] = $this->_redirector . urlencode($link['url']);
+            }
+            else {
+                $link['real_url'] = $link['url'];
+            }
         }
+    }
+
+    /**
+     * Saves the database from memory to disk
+     *
+     * @throws IOException the datastore is not writable
+     */
+    private function writeDB()
+    {
+        if (is_file($this->_datastore) && !is_writeable($this->_datastore)) {
+            // The datastore exists but is not writeable
+            throw new IOException($this->_datastore);
+        } else if (!is_file($this->_datastore) && !is_writeable(dirname($this->_datastore))) {
+            // The datastore does not exist and its parent directory is not writeable
+            throw new IOException(dirname($this->_datastore));
+        }
+
+        file_put_contents(
+            $this->_datastore,
+            self::$phpPrefix.base64_encode(gzdeflate(serialize($this->_links))).self::$phpSuffix
+        );
+
     }
 
     /**
@@ -278,10 +312,9 @@ You use the community supported version of the original Shaarli project, by Seba
             // TODO: raise an Exception instead
             die('You are not authorized to change the database.');
         }
-        file_put_contents(
-            $this->_datastore,
-            self::$phpPrefix.base64_encode(gzdeflate(serialize($this->_links))).self::$phpSuffix
-        );
+
+        $this->writeDB();
+
         invalidateCaches($pageCacheDir);
     }
 

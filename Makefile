@@ -13,8 +13,8 @@
 #   - enable in php.ini
 
 BIN = vendor/bin
-PHP_SOURCE = index.php application tests
-PHP_COMMA_SOURCE = index.php,application,tests
+PHP_SOURCE = index.php application tests plugins
+PHP_COMMA_SOURCE = index.php,application,tests,plugins
 
 all: static_analysis_summary test
 
@@ -110,6 +110,7 @@ test:
 	@echo "-------"
 	@echo "PHPUNIT"
 	@echo "-------"
+	@mkdir -p sandbox
 	@$(BIN)/phpunit tests
 
 ##
@@ -119,6 +120,12 @@ test:
 ### remove all unversioned files
 clean:
 	@git clean -df
+	@rm -rf sandbox
+
+### generate Doxygen documentation
+doxygen: clean
+	@rm -rf doxygen
+	@( cat Doxyfile ; echo "PROJECT_NUMBER=`git describe`" ) | doxygen -
 
 ### update the local copy of the documentation
 doc: clean

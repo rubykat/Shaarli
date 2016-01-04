@@ -118,6 +118,8 @@ class UtilsTest extends PHPUnit_Framework_TestCase
         $this->assertEquals($ref, generateLocation($ref, 'localhost'));
         $ref = 'http://localhost:8080/?test';
         $this->assertEquals($ref, generateLocation($ref, 'localhost:8080'));
+        $ref = '?localreferer#hash';
+        $this->assertEquals($ref, generateLocation($ref, 'localhost:8080'));
     }
 
     /**
@@ -134,37 +136,6 @@ class UtilsTest extends PHPUnit_Framework_TestCase
     public function testGenerateLocationOut() {
         $ref = 'http://somewebsite.com/?test';
         $this->assertEquals('?', generateLocation($ref, 'localhost'));
-    }
-
-    /**
-     * Check supported PHP versions
-     */
-    public function testCheckSupportedPHPVersion()
-    {
-        $minVersion = '5.3';
-        checkPHPVersion($minVersion, '5.4.32');
-        checkPHPVersion($minVersion, '5.5');
-        checkPHPVersion($minVersion, '5.6.10');
-    }
-
-    /**
-     * Check a unsupported PHP version
-     * @expectedException              Exception
-     * @expectedExceptionMessageRegExp /Your PHP version is obsolete/
-     */
-    public function testCheckSupportedPHPVersion51()
-    {
-        checkPHPVersion('5.3', '5.1.0');
-    }
-
-    /**
-     * Check another unsupported PHP version
-     * @expectedException              Exception
-     * @expectedExceptionMessageRegExp /Your PHP version is obsolete/
-     */
-    public function testCheckSupportedPHPVersion52()
-    {
-        checkPHPVersion('5.3', '5.2');
     }
 
     /**
@@ -215,5 +186,42 @@ class UtilsTest extends PHPUnit_Framework_TestCase
         $this->assertFalse(
             is_session_id_valid('c0ZqcWF3VFE2NmJBdm1HMVQ0ZHJ3UmZPbTFsNGhkNHI=')
         );
+    }
+
+    /**
+     * Test text2clickable without a redirector being set.
+     */
+    public function testText2clickableWithoutRedirector()
+    {
+        $text = 'stuff http://hello.there/is=someone#here otherstuff';
+        $expectedText = 'stuff <a href="http://hello.there/is=someone#here">http://hello.there/is=someone#here</a> otherstuff';
+        $processedText = text2clickable($text, '');
+        $this->assertEquals($expectedText, $processedText);
+    }
+
+    /**
+     * Test text2clickable a redirector set.
+     */
+    public function testText2clickableWithRedirector()
+    {
+        $text = 'stuff http://hello.there/is=someone#here otherstuff';
+        $redirector = 'http://redirector.to';
+        $expectedText = 'stuff <a href="'.
+            $redirector .
+            urlencode('http://hello.there/is=someone#here') .
+            '">http://hello.there/is=someone#here</a> otherstuff';
+        $processedText = text2clickable($text, $redirector);
+        $this->assertEquals($expectedText, $processedText);
+    }
+
+    /**
+     * Test testSpace2nbsp.
+     */
+    public function testSpace2nbsp()
+    {
+        $text = '  Are you   thrilled  by flags   ?'. PHP_EOL .' Really?';
+        $expectedText = '&nbsp; Are you &nbsp; thrilled &nbsp;by flags &nbsp; ?'. PHP_EOL .'&nbsp;Really?';
+        $processedText = space2nbsp($text);
+        $this->assertEquals($expectedText, $processedText);
     }
 }

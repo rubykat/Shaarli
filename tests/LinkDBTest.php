@@ -4,6 +4,7 @@
  */
 
 require_once 'application/Cache.php';
+require_once 'application/FileUtils.php';
 require_once 'application/LinkDB.php';
 require_once 'application/Utils.php';
 require_once 'tests/utils/ReferenceLinkDB.php';
@@ -15,7 +16,7 @@ require_once 'tests/utils/ReferenceLinkDB.php';
 class LinkDBTest extends PHPUnit_Framework_TestCase
 {
     // datastore to test write operations
-    protected static $testDatastore = 'tests/datastore.php';
+    protected static $testDatastore = 'sandbox/datastore.php';
     protected static $refDB = null;
     protected static $publicLinkDB = null;
     protected static $privateLinkDB = null;
@@ -87,8 +88,8 @@ class LinkDBTest extends PHPUnit_Framework_TestCase
     /**
      * Attempt to instantiate a LinkDB whereas the datastore is not writable
      *
-     * @expectedException              PHPUnit_Framework_Error_Warning
-     * @expectedExceptionMessageRegExp /failed to open stream: No such file or directory/
+     * @expectedException              IOException
+     * @expectedExceptionMessageRegExp /Error accessing null/
      */
     public function testConstructDatastoreNotWriteable()
     {
@@ -509,5 +510,28 @@ class LinkDBTest extends PHPUnit_Framework_TestCase
             2,
             sizeof(self::$publicLinkDB->filterFullText('free software'))
         );
+    }
+
+    /**
+     * Test real_url without redirector.
+     */
+    public function testLinkRealUrlWithoutRedirector()
+    {
+        $db = new LinkDB(self::$testDatastore, false, false);
+        foreach($db as $link) {
+            $this->assertEquals($link['url'], $link['real_url']);
+        }
+    }
+
+    /**
+     * Test real_url with redirector.
+     */
+    public function testLinkRealUrlWithRedirector()
+    {
+        $redirector = 'http://redirector.to?';
+        $db = new LinkDB(self::$testDatastore, false, false, $redirector);
+        foreach($db as $link) {
+            $this->assertStringStartsWith($redirector, $link['real_url']);
+        }
     }
 }

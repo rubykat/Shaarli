@@ -97,12 +97,12 @@ function checkDateFormat($format, $string)
  */
 function generateLocation($referer, $host, $loopTerms = array())
 {
-    $final_referer = '?';
+    $finalReferer = '?';
 
     // No referer if it contains any value in $loopCriteria.
     foreach ($loopTerms as $value) {
         if (strpos($referer, $value) !== false) {
-            return $final_referer;
+            return $finalReferer;
         }
     }
 
@@ -111,31 +111,12 @@ function generateLocation($referer, $host, $loopTerms = array())
         $host = substr($host, 0, $pos);
     }
 
-    if (!empty($referer) && strpos(parse_url($referer, PHP_URL_HOST), $host) !== false) {
-        $final_referer = $referer;
+    $refererHost = parse_url($referer, PHP_URL_HOST);
+    if (!empty($referer) && (strpos($refererHost, $host) !== false || startsWith('?', $refererHost))) {
+        $finalReferer = $referer;
     }
 
-    return $final_referer;
-}
-
-/**
- * Checks the PHP version to ensure Shaarli can run
- *
- * @param string $minVersion minimum PHP required version
- * @param string $curVersion current PHP version (use PHP_VERSION)
- *
- * @throws Exception    the PHP version is not supported
- */
-function checkPHPVersion($minVersion, $curVersion)
-{
-    if (version_compare($curVersion, $minVersion) < 0) {
-        throw new Exception(
-            'Your PHP version is obsolete!'
-            .' Shaarli requires at least PHP '.$minVersion.', and thus cannot run.'
-            .' Your PHP version has known security vulnerabilities and should be'
-            .' updated as soon as possible.'
-        );
-    }
+    return $finalReferer;
 }
 
 /**
@@ -166,4 +147,57 @@ function is_session_id_valid($sessionId)
     }
 
     return true;
+}
+
+/**
+ * In a string, converts URLs to clickable links.
+ *
+ * @param string $text       input string.
+ * @param string $redirector if a redirector is set, use it to gerenate links.
+ *
+ * @return string returns $text with all links converted to HTML links.
+ *
+ * @see Function inspired from http://www.php.net/manual/en/function.preg-replace.php#85722
+ */
+function text2clickable($text, $redirector)
+{
+    $regex = '!(((?:https?|ftp|file)://|apt:|magnet:)\S+[[:alnum:]]/?)!si';
+
+    if (empty($redirector)) {
+        return preg_replace($regex, '<a href="$1">$1</a>', $text);
+    }
+    // Redirector is set, urlencode the final URL.
+    return preg_replace_callback(
+        $regex,
+        function ($matches) use ($redirector) {
+            return '<a href="' . $redirector . urlencode($matches[1]) .'">'. $matches[1] .'</a>';
+        },
+        $text
+    );
+}
+
+/**
+ * This function inserts &nbsp; where relevant so that multiple spaces are properly displayed in HTML
+ * even in the absence of <pre>  (This is used in description to keep text formatting).
+ *
+ * @param string $text input text.
+ *
+ * @return string formatted text.
+ */
+function space2nbsp($text)
+{
+    return preg_replace('/(^| ) /m', '$1&nbsp;', $text);
+}
+
+/**
+ * Format Shaarli's description
+ * TODO: Move me to ApplicationUtils when it's ready.
+ *
+ * @param string $description shaare's description.
+ * @param string $redirector  if a redirector is set, use it to gerenate links.
+ *
+ * @return string formatted description.
+ */
+function format_description($description, $redirector) {
+    return nl2br(space2nbsp(text2clickable($description, $redirector)));
 }
