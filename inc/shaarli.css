@@ -222,7 +222,8 @@ h1 {
 }
 
 .tagfilter #tagfilter_value {
-    width: 10%;
+    /* width: 10%; */
+    width: 30em;
 }
 
 .tagfilter input.bigbutton, .searchform input.bigbutton, .addform input.bigbutton {
