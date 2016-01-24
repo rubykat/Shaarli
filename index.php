@@ -73,6 +73,10 @@ include "inc/rain.tpl.class.php"; //include Rain TPL
 raintpl::$tpl_dir = $GLOBALS['config']['RAINTPL_TPL']; // template directory
 raintpl::$cache_dir = $GLOBALS['config']['RAINTPL_TMP']; // cache directory
 
+require_once 'Services/JSON.php';
+
+// ====================================================
+
 ob_start();  // Output buffering for the page cache.
 
 
@@ -1814,6 +1818,46 @@ HTML;
         $PAGE->assign('token',getToken());
         $PAGE->assign('maxfilesize',getMaxFileSize());
         $PAGE->renderPage('import');
+        exit;
+    }
+
+    // -------- Dump as file.
+    if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=dump'))
+    {
+        if (empty($_GET['what']))
+        {
+            $PAGE = new pageBuilder;
+            $PAGE->assign('linkcount',count($LINKSDB));
+            $PAGE->renderPage('dump');
+            exit;
+        }
+        $JSON = new Services_JSON();
+        $dumpWhat=$_GET['what'];
+        if (!array_intersect(array('all','public','private'),array($dumpWhat))) die('What are you trying to dump???');
+
+        header('Content-Type: text/plain; charset=utf-8');
+        header('Content-disposition: attachment; filename=dump_'.$dumpWhat.'_'.strval(date('Ymd_His')).'.txt');
+        $currentdate=date('Y/m/d H:i:s');
+        echo "[\n";
+        $i = 0;
+        $length = count($LINKSDB) - 1;
+        foreach($LINKSDB as $link)
+        {
+            if ($dumpWhat=='all' ||
+               ($dumpWhat=='private' && $link['private']!=0) ||
+               ($dumpWhat=='public' && $link['private']==0))
+            {
+                echo $JSON->encode($link);
+                if ($i != $length)
+                {
+                    echo ",";
+                    // because JSON can't cope with a comma after the last array item
+                }
+                echo "\n";
+            }
+            $i++;
+        }
+        echo "]\n";
         exit;
     }
 
