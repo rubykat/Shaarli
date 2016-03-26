@@ -1,6 +1,6 @@
 <?php
 /**
- * Shaarli v0.6.2 - Shaare your links...
+ * Shaarli v0.6.5 - Shaare your links...
  *
  * The personal, minimalist, super-fast, no-database Delicious clone.
  *
@@ -44,11 +44,17 @@ $GLOBALS['config']['DATASTORE'] = $GLOBALS['config']['DATADIR'].'/datastore.php'
 // Banned IPs
 $GLOBALS['config']['IPBANS_FILENAME'] = $GLOBALS['config']['DATADIR'].'/ipbans.php';
 
+// Processed updates file.
+$GLOBALS['config']['UPDATES_FILE'] = $GLOBALS['config']['DATADIR'].'/updates.txt';
+
 // Access log
 $GLOBALS['config']['LOG_FILE'] = $GLOBALS['config']['DATADIR'].'/log.txt';
 
 // For updates check of Shaarli
 $GLOBALS['config']['UPDATECHECK_FILENAME'] = $GLOBALS['config']['DATADIR'].'/lastupdatecheck.txt';
+
+// Set ENABLE_UPDATECHECK to disabled by default.
+$GLOBALS['config']['ENABLE_UPDATECHECK'] = false;
 
 // RainTPL cache directory (keep the trailing slash!)
 $GLOBALS['config']['RAINTPL_TMP'] = 'tmp/';
@@ -60,7 +66,6 @@ $GLOBALS['config']['CACHEDIR'] = 'cache';
 
 // Atom & RSS feed cache directory
 $GLOBALS['config']['PAGECACHE'] = 'pagecache';
-
 
 /*
  * Global configuration
@@ -111,7 +116,8 @@ $GLOBALS['config']['UPDATECHECK_INTERVAL'] = 86400;
 //);
 $GLOBALS['config']['ENABLED_PLUGINS'] = array('qrcode');
 
-//$GLOBALS['plugins']['WALLABAG_URL'] = 'https://demo.wallabag.org/';
+// Initialize plugin parameters array.
+$GLOBALS['plugins'] = array();
 
 // PubSubHubbub support. Put an empty string to disable, or put your hub url here to enable.
 $GLOBALS['config']['PUBSUBHUB_URL'] = '';
@@ -119,7 +125,7 @@ $GLOBALS['config']['PUBSUBHUB_URL'] = '';
 /*
  * PHP configuration
  */
-define('shaarli_version', '0.6.2');
+define('shaarli_version', '0.6.5');
 
 // http://server.com/x/shaarli --> /shaarli/
 define('WEB_PATH', substr($_SERVER["REQUEST_URI"], 0, 1+strrpos($_SERVER["REQUEST_URI"], '/', 0)));
@@ -148,15 +154,19 @@ if (is_file($GLOBALS['config']['CONFIG_FILE'])) {
 require_once 'application/ApplicationUtils.php';
 require_once 'application/Cache.php';
 require_once 'application/CachedPage.php';
+require_once 'application/FeedBuilder.php';
 require_once 'application/FileUtils.php';
 require_once 'application/HttpUtils.php';
 require_once 'application/LinkDB.php';
+require_once 'application/LinkFilter.php';
+require_once 'application/LinkUtils.php';
 require_once 'application/TimeZone.php';
 require_once 'application/Url.php';
 require_once 'application/Utils.php';
 require_once 'application/Config.php';
 require_once 'application/PluginManager.php';
 require_once 'application/Router.php';
+require_once 'application/Updater.php';
 
 // Ensure the PHP version is supported
 try {
@@ -259,7 +269,10 @@ $GLOBALS['redirector'] = !empty($GLOBALS['redirector']) ? escape($GLOBALS['redir
 // a token depending of deployment salt, user password, and the current ip
 define('STAY_SIGNED_IN_TOKEN', sha1($GLOBALS['hash'].$_SERVER["REMOTE_ADDR"].$GLOBALS['salt']));
 
-autoLocale(); // Sniff browser language and set date format accordingly.
+// Sniff browser language and set date format accordingly.
+if (isset($_SERVER['HTTP_ACCEPT_LANGUAGE'])) {
+    autoLocale($_SERVER['HTTP_ACCEPT_LANGUAGE']);
+}
 header('Content-Type: text/html; charset=utf-8'); // We use UTF-8 for proper international characters handling.
 
 //==================================================================================================
@@ -306,34 +319,6 @@ function setup_login_state() {
 }
 $userIsLoggedIn = setup_login_state();
 
-
-// -----------------------------------------------------------------------------------------------
-// Log to text file
-function logm($message)
-{
-    $t = strval(date('Y/m/d_H:i:s')).' - '.$_SERVER["REMOTE_ADDR"].' - '.strval($message)."\n";
-    file_put_contents($GLOBALS['config']['LOG_FILE'], $t, FILE_APPEND);
-}
-
-// ------------------------------------------------------------------------------------------
-// Sniff browser language to display dates in the right format automatically.
-// (Note that is may not work on your server if the corresponding local is not installed.)
-function autoLocale()
-{
-    $attempts = array('en_US'); // Default if browser does not send HTTP_ACCEPT_LANGUAGE
-    if (isset($_SERVER['HTTP_ACCEPT_LANGUAGE'])) // e.g. "fr,fr-fr;q=0.8,en;q=0.5,en-us;q=0.3"
-    {   // (It's a bit crude, but it works very well. Preferred language is always presented first.)
-        if (preg_match('/([a-z]{2})-?([a-z]{2})?/i',$_SERVER['HTTP_ACCEPT_LANGUAGE'],$matches)) {
-            $loc = $matches[1] . (!empty($matches[2]) ? '_' . strtoupper($matches[2]) : '');
-            $attempts = array($loc.'.UTF-8', $loc, str_replace('_', '-', $loc).'.UTF-8', str_replace('_', '-', $loc),
-                $loc . '_' . strtoupper($loc).'.UTF-8', $loc . '_' . strtoupper($loc),
-                $loc . '_' . $loc.'.UTF-8', $loc . '_' . $loc, $loc . '-' . strtoupper($loc).'.UTF-8',
-                $loc . '-' . strtoupper($loc), $loc . '-' . $loc.'.UTF-8', $loc . '-' . $loc);
-        }
-    }
-    setlocale(LC_TIME, $attempts);  // LC_TIME = Set local for date/time format only.
-}
-
 // ------------------------------------------------------------------------------------------
 // PubSubHubbub protocol support (if enabled)  [UNTESTED]
 // (Source: http://aldarone.fr/les-flux-rss-shaarli-et-pubsubhubbub/ )
@@ -378,10 +363,10 @@ function check_auth($login,$password)
     if ($login==$GLOBALS['login'] && $hash==$GLOBALS['hash'])
     {   // Login/password is correct.
 		fillSessionInfo();
-        logm('Login successful');
+        logm($GLOBALS['config']['LOG_FILE'], $_SERVER['REMOTE_ADDR'], 'Login successful');
         return True;
     }
-    logm('Login failed for user '.$login);
+    logm($GLOBALS['config']['LOG_FILE'], $_SERVER['REMOTE_ADDR'], 'Login failed for user '.$login);
     return False;
 }
 
@@ -418,7 +403,7 @@ function ban_loginFailed()
     if ($gb['FAILURES'][$ip]>($GLOBALS['config']['BAN_AFTER']-1))
     {
         $gb['BANS'][$ip]=time()+$GLOBALS['config']['BAN_DURATION'];
-        logm('IP address banned from login');
+        logm($GLOBALS['config']['LOG_FILE'], $_SERVER['REMOTE_ADDR'], 'IP address banned from login');
     }
     $GLOBALS['IPBANS'] = $gb;
     file_put_contents($GLOBALS['config']['IPBANS_FILENAME'], "<?php\n\$GLOBALS['IPBANS']=".var_export($gb,true).";\n?>");
@@ -442,7 +427,7 @@ function ban_canLogin()
         // User is banned. Check if the ban has expired:
         if ($gb['BANS'][$ip]<=time())
         {   // Ban expired, user can try to login again.
-            logm('Ban lifted.');
+            logm($GLOBALS['config']['LOG_FILE'], $_SERVER['REMOTE_ADDR'], 'Ban lifted.');
             unset($gb['FAILURES'][$ip]); unset($gb['BANS'][$ip]);
             file_put_contents($GLOBALS['config']['IPBANS_FILENAME'], "<?php\n\$GLOBALS['IPBANS']=".var_export($gb,true).";\n?>");
             return true; // Ban has expired, user can login.
@@ -478,7 +463,7 @@ if (isset($_POST['login']))
             session_set_cookie_params(0,$cookiedir,$_SERVER['SERVER_NAME']); // 0 means "When browser closes"
             session_regenerate_id(true);
         }
-        
+
         // Optional redirect after login:
         if (isset($_GET['post'])) {
             $uri = '?post='. urlencode($_GET['post']);
@@ -499,7 +484,7 @@ if (isset($_POST['login']))
         if (isset($_POST['returnurl'])) {
             // Prevent loops over login screen.
             if (strpos($_POST['returnurl'], 'do=login') === false) {
-                header('Location: '. escape($_POST['returnurl']));
+                header('Location: '. generateLocation($_POST['returnurl'], $_SERVER['HTTP_HOST']));
                 exit;
             }
         }
@@ -548,40 +533,6 @@ function getMaxFileSize()
     $maxsize = min($size1,$size2);
     // FIXME: Then convert back to readable notations ? (e.g. 2M instead of 2000000)
     return $maxsize;
-}
-
-/*  Converts a linkdate time (YYYYMMDD_HHMMSS) of an article to a timestamp (Unix epoch)
-    (used to build the ADD_DATE attribute in Netscape-bookmarks file)
-    PS: I could have used strptime(), but it does not exist on Windows. I'm too kind. */
-function linkdate2timestamp($linkdate)
-{
-    if(strcmp($linkdate, '_000000') !== 0 || !$linkdate){
-        $Y=$M=$D=$h=$m=$s=0;
-        $r = sscanf($linkdate,'%4d%2d%2d_%2d%2d%2d',$Y,$M,$D,$h,$m,$s);
-        return mktime($h,$m,$s,$M,$D,$Y);
-    }
-    return time();
-}
-
-/*  Converts a linkdate time (YYYYMMDD_HHMMSS) of an article to a RFC822 date.
-    (used to build the pubDate attribute in RSS feed.)  */
-function linkdate2rfc822($linkdate)
-{
-    return date('r',linkdate2timestamp($linkdate)); // 'r' is for RFC822 date format.
-}
-
-/*  Converts a linkdate time (YYYYMMDD_HHMMSS) of an article to a ISO 8601 date.
-    (used to build the updated tags in ATOM feed.)  */
-function linkdate2iso8601($linkdate)
-{
-    return date('c',linkdate2timestamp($linkdate)); // 'c' is for ISO 8601 date format.
-}
-
-// Extract title from an HTML document.
-// (Returns an empty string if not found.)
-function html_extract_title($html)
-{
-  return preg_match('!<title>(.*?)</title>!is', $html, $matches) ? trim(str_replace("\n",' ', $matches[1])) : '' ;
 }
 
 // ------------------------------------------------------------------------------------------
@@ -646,7 +597,7 @@ class pageBuilder
             $this->tpl->assign('versionError', '');
 
         } catch (Exception $exc) {
-            logm($exc->getMessage());
+            logm($GLOBALS['config']['LOG_FILE'], $_SERVER['REMOTE_ADDR'], $exc->getMessage());
             $this->tpl->assign('newVersion', '');
             $this->tpl->assign('versionError', escape($exc->getMessage()));
         }
@@ -656,7 +607,7 @@ class pageBuilder
         if (!empty($_GET['searchtags'])) {
             $searchcrits .= '&searchtags=' . urlencode($_GET['searchtags']);
         }
-        elseif (!empty($_GET['searchterm'])) {
+        if (!empty($_GET['searchterm'])) {
             $searchcrits .= '&searchterm=' . urlencode($_GET['searchterm']);
         }
         $this->tpl->assign('searchcrits', $searchcrits);
@@ -687,6 +638,29 @@ class pageBuilder
         $this->tpl->assign($what,$where);
     }
 
+    /**
+     * Assign an array of data to the template builder.
+     *
+     * @param array $data Data to assign.
+     *
+     * @return false if invalid data.
+     */
+    public function assignAll($data)
+    {
+        // Lazy initialization
+        if ($this->tpl === false) {
+            $this->initialize();
+        }
+
+        if (empty($data) || !is_array($data)){
+            return false;
+        }
+
+        foreach ($data as $key => $value) {
+            $this->assign($key, $value);
+        }
+    }
+
     // Render a specific page (using a template).
     // e.g. pb.renderPage('picwall')
     public function renderPage($page)
@@ -694,200 +668,18 @@ class pageBuilder
         if ($this->tpl===false) $this->initialize(); // Lazy initialization
         $this->tpl->draw($page);
     }
-}
 
-// ------------------------------------------------------------------------------------------
-// Output the last N links in RSS 2.0 format.
-function showRSS()
-{
-    header('Content-Type: application/rss+xml; charset=utf-8');
-
-    // $usepermalink : If true, use permalink instead of final link.
-    // User just has to add 'permalink' in URL parameters. e.g. http://mysite.com/shaarli/?do=rss&permalinks
-    // Also enabled through a config option
-    $usepermalinks = isset($_GET['permalinks']) || !$GLOBALS['config']['ENABLE_RSS_PERMALINKS'];
-
-    // Cache system
-    $query = $_SERVER["QUERY_STRING"];
-    $cache = new CachedPage(
-        $GLOBALS['config']['PAGECACHE'],
-        page_url($_SERVER),
-        startsWith($query,'do=rss') && !isLoggedIn()
-    );
-    $cached = $cache->cachedVersion();
-    if (! empty($cached)) {
-        echo $cached;
-        exit;
+    /**
+    * Render a 404 page (uses the template : tpl/404.tpl)
+    *
+    * usage : $PAGE->render404('The link was deleted')
+    * @param string $message A messate to display what is not found
+    */
+    public function render404($message='The page you are trying to reach does not exist or has been deleted.') {
+        header($_SERVER['SERVER_PROTOCOL'] . ' 404 Not Found');
+        $this->tpl->assign('error_message', $message);
+        $this->renderPage('404');
     }
-
-    // If cached was not found (or not usable), then read the database and build the response:
-    $LINKSDB = new LinkDB(
-        $GLOBALS['config']['DATASTORE'],
-        isLoggedIn(),
-        $GLOBALS['config']['HIDE_PUBLIC_LINKS'],
-        $GLOBALS['redirector']
-    );
-    // Read links from database (and filter private links if user it not logged in).
-
-    // Optionally filter the results:
-    $linksToDisplay=array();
-    if (!empty($_GET['searchterm'])) $linksToDisplay = $LINKSDB->filterFulltext($_GET['searchterm']);
-    else if (!empty($_GET['searchtags']))   $linksToDisplay = $LINKSDB->filterTags(trim($_GET['searchtags']));
-    else $linksToDisplay = $LINKSDB;
-
-    $nblinksToDisplay = 50;  // Number of links to display.
-    if (!empty($_GET['nb']))  // In URL, you can specificy the number of links. Example: nb=200 or nb=all for all links.
-    {
-        $nblinksToDisplay = $_GET['nb']=='all' ? count($linksToDisplay) : max($_GET['nb']+0,1) ;
-    }
-
-    $pageaddr=escape(index_url($_SERVER));
-    echo '<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">';
-    echo '<channel><title>'.$GLOBALS['title'].'</title><link>'.$pageaddr.'</link>';
-    echo '<description>Shared links</description><language>en-en</language><copyright>'.$pageaddr.'</copyright>'."\n\n";
-    if (!empty($GLOBALS['config']['PUBSUBHUB_URL']))
-    {
-        echo '<!-- PubSubHubbub Discovery -->';
-        echo '<link rel="hub" href="'.escape($GLOBALS['config']['PUBSUBHUB_URL']).'" xmlns="http://www.w3.org/2005/Atom" />';
-        echo '<link rel="self" href="'.$pageaddr.'?do=rss" xmlns="http://www.w3.org/2005/Atom" />';
-        echo '<!-- End Of PubSubHubbub Discovery -->';
-    }
-    $i=0;
-    $keys=array(); foreach($linksToDisplay as $key=>$value) { $keys[]=$key; }  // No, I can't use array_keys().
-    while ($i<$nblinksToDisplay && $i<count($keys))
-    {
-        $link = $linksToDisplay[$keys[$i]];
-        $guid = $pageaddr.'?'.smallHash($link['linkdate']);
-        $rfc822date = linkdate2rfc822($link['linkdate']);
-        $absurl = $link['url'];
-        if (startsWith($absurl,'?')) $absurl=$pageaddr.$absurl;  // make permalink URL absolute
-        if ($usepermalinks===true)
-            echo '<item><title>'.$link['title'].'</title><guid isPermaLink="true">'.$guid.'</guid><link>'.$guid.'</link>';
-        else
-            echo '<item><title>'.$link['title'].'</title><guid isPermaLink="false">'.$guid.'</guid><link>'.$absurl.'</link>';
-        if (!$GLOBALS['config']['HIDE_TIMESTAMPS'] || isLoggedIn()) echo '<pubDate>'.escape($rfc822date)."</pubDate>\n";
-        if ($link['tags']!='') // Adding tags to each RSS entry (as mentioned in RSS specification)
-        {
-            foreach(explode(' ',$link['tags']) as $tag) { echo '<category domain="'.$pageaddr.'">'.$tag.'</category>'."\n"; }
-        }
-
-        // Add permalink in description
-        $descriptionlink = '(<a href="'.$guid.'">Permalink</a>)';
-        // If user wants permalinks first, put the final link in description
-        if ($usepermalinks===true) $descriptionlink = '(<a href="'.$absurl.'">Link</a>)';
-        if (strlen($link['description'])>0) $descriptionlink = '<br>'.$descriptionlink;
-        echo '<description><![CDATA['.
-            format_description($link['description'], $GLOBALS['redirector']) .
-            $descriptionlink . ']]></description>' . "\n</item>\n";
-        $i++;
-    }
-    echo '</channel></rss><!-- Cached version of '.escape(page_url($_SERVER)).' -->';
-
-    $cache->cache(ob_get_contents());
-    ob_end_flush();
-    exit;
-}
-
-// ------------------------------------------------------------------------------------------
-// Output the last N links in ATOM format.
-function showATOM()
-{
-    header('Content-Type: application/atom+xml; charset=utf-8');
-
-    // $usepermalink : If true, use permalink instead of final link.
-    // User just has to add 'permalink' in URL parameters. e.g. http://mysite.com/shaarli/?do=atom&permalinks
-    $usepermalinks = isset($_GET['permalinks']) || !$GLOBALS['config']['ENABLE_RSS_PERMALINKS'];
-
-    // Cache system
-    $query = $_SERVER["QUERY_STRING"];
-    $cache = new CachedPage(
-        $GLOBALS['config']['PAGECACHE'],
-        page_url($_SERVER),
-        startsWith($query,'do=atom') && !isLoggedIn()
-    );
-    $cached = $cache->cachedVersion();
-    if (!empty($cached)) {
-        echo $cached;
-        exit;
-    }
-
-    // If cached was not found (or not usable), then read the database and build the response:
-    // Read links from database (and filter private links if used it not logged in).
-    $LINKSDB = new LinkDB(
-        $GLOBALS['config']['DATASTORE'],
-        isLoggedIn(),
-        $GLOBALS['config']['HIDE_PUBLIC_LINKS'],
-        $GLOBALS['redirector']
-    );
-
-    // Optionally filter the results:
-    $linksToDisplay=array();
-    if (!empty($_GET['searchterm'])) $linksToDisplay = $LINKSDB->filterFulltext($_GET['searchterm']);
-    else if (!empty($_GET['searchtags']))   $linksToDisplay = $LINKSDB->filterTags(trim($_GET['searchtags']));
-    else $linksToDisplay = $LINKSDB;
-
-    $nblinksToDisplay = 50;  // Number of links to display.
-    if (!empty($_GET['nb']))  // In URL, you can specificy the number of links. Example: nb=200 or nb=all for all links.
-    {
-        $nblinksToDisplay = $_GET['nb']=='all' ? count($linksToDisplay) : max($_GET['nb']+0,1) ;
-    }
-
-    $pageaddr=escape(index_url($_SERVER));
-    $latestDate = '';
-    $entries='';
-    $i=0;
-    $keys=array(); foreach($linksToDisplay as $key=>$value) { $keys[]=$key; }  // No, I can't use array_keys().
-    while ($i<$nblinksToDisplay && $i<count($keys))
-    {
-        $link = $linksToDisplay[$keys[$i]];
-        $guid = $pageaddr.'?'.smallHash($link['linkdate']);
-        $iso8601date = linkdate2iso8601($link['linkdate']);
-        $latestDate = max($latestDate,$iso8601date);
-        $absurl = $link['url'];
-        if (startsWith($absurl,'?')) $absurl=$pageaddr.$absurl;  // make permalink URL absolute
-        $entries.='<entry><title>'.$link['title'].'</title>';
-        if ($usepermalinks===true)
-            $entries.='<link href="'.$guid.'" /><id>'.$guid.'</id>';
-        else
-            $entries.='<link href="'.$absurl.'" /><id>'.$guid.'</id>';
-        if (!$GLOBALS['config']['HIDE_TIMESTAMPS'] || isLoggedIn()) $entries.='<updated>'.escape($iso8601date).'</updated>';
-
-        // Add permalink in description
-        $descriptionlink = '(<a href="'.$guid.'">Permalink</a>)';
-        // If user wants permalinks first, put the final link in description
-        if ($usepermalinks===true) $descriptionlink = '(<a href="'.$absurl.'">Link</a>)';
-        if (strlen($link['description'])>0) $descriptionlink = '<br>'.$descriptionlink;
-
-        $entries .= '<content type="html"><![CDATA['.
-            format_description($link['description'], $GLOBALS['redirector']) .
-            $descriptionlink . "]]></content>\n";
-        if ($link['tags']!='') // Adding tags to each ATOM entry (as mentioned in ATOM specification)
-        {
-            foreach(explode(' ',$link['tags']) as $tag)
-                { $entries.='<category scheme="'.$pageaddr.'" term="'.$tag.'" />'."\n"; }
-        }
-        $entries.="</entry>\n";
-        $i++;
-    }
-    $feed='<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom">';
-    $feed.='<title>'.$GLOBALS['title'].'</title>';
-    if (!$GLOBALS['config']['HIDE_TIMESTAMPS'] || isLoggedIn()) $feed.='<updated>'.escape($latestDate).'</updated>';
-    $feed.='<link rel="self" href="'.escape(server_url($_SERVER).$_SERVER["REQUEST_URI"]).'" />';
-    if (!empty($GLOBALS['config']['PUBSUBHUB_URL']))
-    {
-        $feed.='<!-- PubSubHubbub Discovery -->';
-        $feed.='<link rel="hub" href="'.escape($GLOBALS['config']['PUBSUBHUB_URL']).'" />';
-        $feed.='<!-- End Of PubSubHubbub Discovery -->';
-    }
-    $feed.='<author><name>'.$pageaddr.'</name><uri>'.$pageaddr.'</uri></author>';
-    $feed.='<id>'.$pageaddr.'</id>'."\n\n"; // Yes, I know I should use a real IRI (RFC3987), but the site URL will do.
-    $feed.=$entries;
-    $feed.='</feed><!-- Cached version of '.escape(page_url($_SERVER)).' -->';
-    echo $feed;
-
-    $cache->cache(ob_get_contents());
-    ob_end_flush();
-    exit;
 }
 
 // ------------------------------------------------------------------------------------------
@@ -956,8 +748,7 @@ function showDailyRSS() {
 
     // For each day.
     foreach ($days as $day => $linkdates) {
-        $daydate = linkdate2timestamp($day.'_000000'); // Full text date
-        $rfc822date = linkdate2rfc822($day.'_000000');
+        $dayDate = DateTime::createFromFormat(LinkDB::LINK_DATE_FORMAT, $day.'_000000');
         $absurl = escape(index_url($_SERVER).'?do=daily&day='.$day);  // Absolute URL of the corresponding "Daily" page.
 
         // Build the HTML body of this RSS entry.
@@ -970,7 +761,8 @@ function showDailyRSS() {
             $l = $LINKSDB[$linkdate];
             $l['formatedDescription'] = format_description($l['description'], $GLOBALS['redirector']);
             $l['thumbnail'] = thumbnail($l['url']);
-            $l['timestamp'] = linkdate2timestamp($l['linkdate']);
+            $l_date = DateTime::createFromFormat(LinkDB::LINK_DATE_FORMAT, $l['linkdate']);
+            $l['timestamp'] = $l_date->getTimestamp();
             if (startsWith($l['url'], '?')) {
                 $l['url'] = index_url($_SERVER) . $l['url'];  // make permalink URL absolute
             }
@@ -980,10 +772,10 @@ function showDailyRSS() {
         // Then build the HTML for this day:
         $tpl = new RainTPL;
         $tpl->assign('title', $GLOBALS['title']);
-        $tpl->assign('daydate', $daydate);
+        $tpl->assign('daydate', $dayDate->getTimestamp());
         $tpl->assign('absurl', $absurl);
         $tpl->assign('links', $links);
-        $tpl->assign('rfc822date', escape($rfc822date));
+        $tpl->assign('rssdate', escape($dayDate->format(DateTime::RSS)));
         $html = $tpl->draw('dailyrss', $return_string=true);
 
         echo $html . PHP_EOL;
@@ -1039,7 +831,8 @@ function showDaily($pageBuilder)
         $linksToDisplay[$key]['taglist']=$taglist;
         $linksToDisplay[$key]['formatedDescription'] = format_description($link['description'], $GLOBALS['redirector']);
         $linksToDisplay[$key]['thumbnail'] = thumbnail($link['url']);
-        $linksToDisplay[$key]['timestamp'] = linkdate2timestamp($link['linkdate']);
+        $date = DateTime::createFromFormat(LinkDB::LINK_DATE_FORMAT, $link['linkdate']);
+        $linksToDisplay[$key]['timestamp'] = $date->getTimestamp();
     }
 
     /* We need to spread the articles on 3 columns.
@@ -1064,11 +857,12 @@ function showDaily($pageBuilder)
         $fill[$index]+=$length;
     }
 
+    $dayDate = DateTime::createFromFormat(LinkDB::LINK_DATE_FORMAT, $day.'_000000');
     $data = array(
         'linksToDisplay' => $linksToDisplay,
         'linkcount' => count($LINKSDB),
         'cols' => $columns,
-        'day' => linkdate2timestamp($day.'_000000'),
+        'day' => $dayDate->getTimestamp(),
         'previousday' => $previousday,
         'nextday' => $nextday,
     );
@@ -1101,6 +895,25 @@ function renderPage()
         $GLOBALS['redirector']
     );
 
+    $updater = new Updater(
+        read_updates_file($GLOBALS['config']['UPDATES_FILE']),
+        $GLOBALS,
+        $LINKSDB,
+        isLoggedIn()
+    );
+    try {
+        $newUpdates = $updater->update();
+        if (! empty($newUpdates)) {
+            write_updates_file(
+                $GLOBALS['config']['UPDATES_FILE'],
+                $updater->getDoneUpdates()
+            );
+        }
+    }
+    catch(Exception $e) {
+        die($e->getMessage());
+    }
+
     $PAGE = new pageBuilder;
 
     // Determine which page will be rendered.
@@ -1110,9 +923,9 @@ function renderPage()
     // Call plugin hooks for header, footer and includes, specifying which page will be rendered.
     // Then assign generated data to RainTPL.
     $common_hooks = array(
+        'includes',
         'header',
         'footer',
-        'includes',
     );
     $pluginManager = PluginManager::getInstance();
     foreach($common_hooks as $name) {
@@ -1149,13 +962,8 @@ function renderPage()
     if ($targetPage == Router::$PAGE_PICWALL)
     {
         // Optionally filter the results:
-        $links=array();
-        if (!empty($_GET['searchterm'])) $links = $LINKSDB->filterFulltext($_GET['searchterm']);
-        elseif (!empty($_GET['searchtags']))   $links = $LINKSDB->filterTags(trim($_GET['searchtags']));
-        else $links = $LINKSDB;
-
-        $body='';
-        $linksToDisplay=array();
+        $links = $LINKSDB->filterSearch($_GET);
+        $linksToDisplay = array();
 
         // Get only links which have a thumbnail.
         foreach($links as $link)
@@ -1190,11 +998,26 @@ function renderPage()
 
         // We sort tags alphabetically, then choose a font size according to count.
         // First, find max value.
-        $maxcount=0; foreach($tags as $key=>$value) $maxcount=max($maxcount,$value);
-        ksort($tags);
+        $maxcount = 0;
+        foreach ($tags as $value) {
+            $maxcount = max($maxcount, $value);
+        }
+
+        // Sort tags alphabetically: case insensitive, support locale if avalaible.
+        uksort($tags, function($a, $b) {
+            // Collator is part of PHP intl.
+            if (class_exists('Collator')) {
+                $c = new Collator(setlocale(LC_COLLATE, 0));
+                if (!intl_is_failure(intl_get_error_code())) {
+                    return $c->compare($a, $b);
+                }
+            }
+            return strcasecmp($a, $b);
+        });
+
         $tagList=array();
         foreach($tags as $key=>$value)
-	// Tag font size scaling: default 15 and 30 logarithm bases affect scaling, 22 and 6 are arbitrary font sizes for max and min sizes.
+        // Tag font size scaling: default 15 and 30 logarithm bases affect scaling, 22 and 6 are arbitrary font sizes for max and min sizes.
         {
             $tagList[$key] = array('count'=>$value,'size'=>log($value, 15) / log($maxcount, 30) * (22-6) + 6);
         }
@@ -1216,6 +1039,49 @@ function renderPage()
     // Daily page.
     if ($targetPage == Router::$PAGE_DAILY) {
         showDaily($PAGE);
+    }
+
+    // ATOM and RSS feed.
+    if ($targetPage == Router::$PAGE_FEED_ATOM || $targetPage == Router::$PAGE_FEED_RSS) {
+        $feedType = $targetPage == Router::$PAGE_FEED_RSS ? FeedBuilder::$FEED_RSS : FeedBuilder::$FEED_ATOM;
+        header('Content-Type: application/'. $feedType .'+xml; charset=utf-8');
+
+        // Cache system
+        $query = $_SERVER['QUERY_STRING'];
+        $cache = new CachedPage(
+            $GLOBALS['config']['PAGECACHE'],
+            page_url($_SERVER),
+            startsWith($query,'do='. $targetPage) && !isLoggedIn()
+        );
+        $cached = $cache->cachedVersion();
+        if (false && !empty($cached)) {
+            echo $cached;
+            exit;
+        }
+
+        // Generate data.
+        $feedGenerator = new FeedBuilder($LINKSDB, $feedType, $_SERVER, $_GET, isLoggedIn());
+        $feedGenerator->setLocale(strtolower(setlocale(LC_COLLATE, 0)));
+        $feedGenerator->setHideDates($GLOBALS['config']['HIDE_TIMESTAMPS'] && !isLoggedIn());
+        $feedGenerator->setUsePermalinks(isset($_GET['permalinks']) || !$GLOBALS['config']['ENABLE_RSS_PERMALINKS']);
+        if (!empty($GLOBALS['config']['PUBSUBHUB_URL'])) {
+            $feedGenerator->setPubsubhubUrl($GLOBALS['config']['PUBSUBHUB_URL']);
+        }
+        $data = $feedGenerator->buildData();
+
+        // Process plugin hook.
+        $pluginManager = PluginManager::getInstance();
+        $pluginManager->executeHooks('render_feed', $data, array(
+            'loggedin' => isLoggedIn(),
+            'target' => $targetPage,
+        ));
+
+        // Render the template.
+        $PAGE->assignAll($data);
+        $PAGE->renderPage('feed.'. $feedType);
+        $cache->cache(ob_get_contents());
+        ob_end_flush();
+        exit;
     }
 
     // Display openseach plugin (XML)
@@ -1282,13 +1148,15 @@ function renderPage()
         }
 
         if (isset($params['searchtags'])) {
-            $tags = explode(' ',$params['searchtags']);
-            $tags=array_diff($tags, array($_GET['removetag'])); // Remove value from array $tags.
-            if (count($tags)==0) {
+            $tags = explode(' ', $params['searchtags']);
+            // Remove value from array $tags.
+            $tags = array_diff($tags, array($_GET['removetag']));
+            $params['searchtags'] = implode(' ',$tags);
+
+            if (empty($params['searchtags'])) {
                 unset($params['searchtags']);
-            } else {
-                $params['searchtags'] = implode(' ',$tags);
             }
+
             unset($params['page']); // We also remove page (keeping the same page has no sense, since the results are different)
         }
         header('Location: ?'.http_build_query($params));
@@ -1467,8 +1335,9 @@ function renderPage()
 
         // Delete a tag:
         if (isset($_POST['deletetag']) && !empty($_POST['fromtag'])) {
-            $needle=trim($_POST['fromtag']);
-            $linksToAlter = $LINKSDB->filterTags($needle,true); // True for case-sensitive tag search.
+            $needle = trim($_POST['fromtag']);
+            // True for case-sensitive tag search.
+            $linksToAlter = $LINKSDB->filterSearch(array('searchtags' => $needle), true);
             foreach($linksToAlter as $key=>$value)
             {
                 $tags = explode(' ',trim($value['tags']));
@@ -1483,8 +1352,9 @@ function renderPage()
 
         // Rename a tag:
         if (isset($_POST['renametag']) && !empty($_POST['fromtag']) && !empty($_POST['totag'])) {
-            $needle=trim($_POST['fromtag']);
-            $linksToAlter = $LINKSDB->filterTags($needle,true); // true for case-sensitive tag search.
+            $needle = trim($_POST['fromtag']);
+            // True for case-sensitive tag search.
+            $linksToAlter = $LINKSDB->filterSearch(array('searchtags' => $needle), true);
             foreach($linksToAlter as $key=>$value)
             {
                 $tags = explode(' ',trim($value['tags']));
@@ -1509,21 +1379,42 @@ function renderPage()
     // -------- User clicked the "Save" button when editing a link: Save link to database.
     if (isset($_POST['save_edit']))
     {
-        if (!tokenOk($_POST['token'])) die('Wrong token.'); // Go away!
-        $tags = trim(preg_replace('/\s\s+/',' ', $_POST['lf_tags'])); // Remove multiple spaces.
-        $tags = implode(' ', array_unique(explode(' ', $tags))); // Remove duplicates.
-        $linkdate=$_POST['lf_linkdate'];
+        // Go away!
+        if (! tokenOk($_POST['token'])) {
+            die('Wrong token.');
+        }
+        // Remove multiple spaces.
+        $tags = trim(preg_replace('/\s\s+/', ' ', $_POST['lf_tags']));
+        // Remove first '-' char in tags.
+        $tags = preg_replace('/(^| )\-/', '$1', $tags);
+        // Remove duplicates.
+        $tags = implode(' ', array_unique(explode(' ', $tags)));
+        $linkdate = $_POST['lf_linkdate'];
         $url = trim($_POST['lf_url']);
-        if (!startsWith($url,'http:') && !startsWith($url,'https:') && !startsWith($url,'ftp:') && !startsWith($url,'magnet:') && !startsWith($url,'?') && !startsWith($url,'javascript:'))
-            $url = 'http://'.$url;
-        $link = array('title'=>trim($_POST['lf_title']),'url'=>$url,'description'=>trim($_POST['lf_description']),'private'=>(isset($_POST['lf_private']) ? 1 : 0),
-                      'linkdate'=>$linkdate,'tags'=>str_replace(',',' ',$tags));
-        if ($link['title']=='') $link['title']=$link['url']; // If title is empty, use the URL as title.
+        if (! startsWith($url, 'http:') && ! startsWith($url, 'https:')
+            && ! startsWith($url, 'ftp:') && ! startsWith($url, 'magnet:')
+            && ! startsWith($url, '?') && ! startsWith($url, 'javascript:')
+        ) {
+            $url = 'http://' . $url;
+        }
+
+        $link = array(
+            'title' => trim($_POST['lf_title']),
+            'url' => $url,
+            'description' => $_POST['lf_description'],
+            'private' => (isset($_POST['lf_private']) ? 1 : 0),
+            'linkdate' => $linkdate,
+            'tags' => str_replace(',', ' ', $tags)
+        );
+        // If title is empty, use the URL as title.
+        if ($link['title'] == '') {
+            $link['title'] = $link['url'];
+        }
 
         $pluginManager->executeHooks('save_link', $link);
 
         $LINKSDB[$linkdate] = $link;
-        $LINKSDB->savedb($GLOBALS['config']['PAGECACHE']); // Save to disk.
+        $LINKSDB->savedb($GLOBALS['config']['PAGECACHE']);
         pubsubhub();
 
         // If we are called from the bookmarklet, we must close the popup:
@@ -1532,10 +1423,12 @@ function renderPage()
             exit;
         }
 
-        $returnurl = !empty($_POST['returnurl']) ? escape($_POST['returnurl']): '?';
+        $returnurl = !empty($_POST['returnurl']) ? $_POST['returnurl'] : '?';
         $location = generateLocation($returnurl, $_SERVER['HTTP_HOST'], array('addlink', 'post', 'edit_link'));
-        $location .= '#'.smallHash($_POST['lf_linkdate']);  // Scroll to the link which has been edited.
-        header('Location: '. $location); // After saving the link, redirect to the page the user was on.
+        // Scroll to the link which has been edited.
+        $location .= '#' . smallHash($_POST['lf_linkdate']);
+        // After saving the link, redirect to the page the user was on.
+        header('Location: '. $location);
         exit;
     }
 
@@ -1623,7 +1516,7 @@ function renderPage()
 
     // -------- User want to post a new link: Display link edit form.
     if (isset($_GET['post'])) {
-        $url = cleanup_url($_GET['post']);
+        $url = cleanup_url(escape($_GET['post']));
 
         $link_is_new = false;
         // Check if URL is not already in database (in this case, we will edit the existing link)
@@ -1641,35 +1534,24 @@ function renderPage()
             // If this is an HTTP(S) link, we try go get the page to extract the title (otherwise we will to straight to the edit form.)
             if (empty($title) && strpos(get_url_scheme($url), 'http') !== false) {
                 // Short timeout to keep the application responsive
-                list($headers, $data) = get_http_url($url, 4);
-                // FIXME: Decode charset according to specified in either 1) HTTP response headers or 2) <head> in html
+                list($headers, $content) = get_http_response($url, 4);
                 if (strpos($headers[0], '200 OK') !== false) {
-                    // Look for charset in html header.
-                    preg_match('#<meta .*charset=.*>#Usi', $data, $meta);
-
-                    // If found, extract encoding.
-                    if (!empty($meta[0])) {
-                        // Get encoding specified in header.
-                        preg_match('#charset="?(.*)"#si', $meta[0], $enc);
-                        // If charset not found, use utf-8.
-                        $html_charset = (!empty($enc[1])) ? strtolower($enc[1]) : 'utf-8';
-                    }
-                    else {
-                        $html_charset = 'utf-8';
-                    }
-
-                    // Extract title
-                    $title = html_extract_title($data);
-                    if (!empty($title)) {
-                        // Re-encode title in utf-8 if necessary.
-                        $title = ($html_charset == 'iso-8859-1') ? utf8_encode($title) : $title;
+                    // Retrieve charset.
+                    $charset = get_charset($headers, $content);
+                    // Extract title.
+                    $title = html_extract_title($content);
+                    // Re-encode title in utf-8 if necessary.
+                    if (! empty($title) && $charset != 'utf-8') {
+                        $title = mb_convert_encoding($title, $charset, 'utf-8');
                     }
                 }
             }
+
             if ($url == '') {
                 $url = '?' . smallHash($linkdate);
                 $title = 'Note: ';
             }
+
             $link = array(
                 'linkdate' => $linkdate,
                 'title' => $title,
@@ -1730,7 +1612,8 @@ HTML;
                ($exportWhat=='private' && $link['private']!=0) ||
                ($exportWhat=='public' && $link['private']==0))
             {
-                echo '<DT><A HREF="'.$link['url'].'" ADD_DATE="'.linkdate2timestamp($link['linkdate']).'" PRIVATE="'.$link['private'].'"';
+                $date = DateTime::createFromFormat(LinkDB::LINK_DATE_FORMAT, $link['linkdate']);
+                echo '<DT><A HREF="'.$link['url'].'" ADD_DATE="'.$date->getTimestamp().'" PRIVATE="'.$link['private'].'"';
                 if ($link['tags']!='') echo ' TAGS="'.str_replace(' ',',',$link['tags']).'"';
                 echo '>'.$link['title']."</A>\n";
                 if ($link['description']!='') echo '<DD>'.$link['description']."\n";
@@ -1761,6 +1644,54 @@ HTML;
         $PAGE->assign('token',getToken());
         $PAGE->assign('maxfilesize',getMaxFileSize());
         $PAGE->renderPage('import');
+        exit;
+    }
+
+    // Plugin administration page
+    if ($targetPage == Router::$PAGE_PLUGINSADMIN) {
+        $pluginMeta = $pluginManager->getPluginsMeta();
+
+        // Split plugins into 2 arrays: ordered enabled plugins and disabled.
+        $enabledPlugins = array_filter($pluginMeta, function($v) { return $v['order'] !== false; });
+        // Load parameters.
+        $enabledPlugins = load_plugin_parameter_values($enabledPlugins, $GLOBALS['plugins']);
+        uasort(
+            $enabledPlugins,
+            function($a, $b) { return $a['order'] - $b['order']; }
+        );
+        $disabledPlugins = array_filter($pluginMeta, function($v) { return $v['order'] === false; });
+
+        $PAGE->assign('enabledPlugins', $enabledPlugins);
+        $PAGE->assign('disabledPlugins', $disabledPlugins);
+        $PAGE->renderPage('pluginsadmin');
+        exit;
+    }
+
+    // Plugin administration form action
+    if ($targetPage == Router::$PAGE_SAVE_PLUGINSADMIN) {
+        try {
+            if (isset($_POST['parameters_form'])) {
+                unset($_POST['parameters_form']);
+                foreach ($_POST as $param => $value) {
+                    $GLOBALS['plugins'][$param] = escape($value);
+                }
+            }
+            else {
+                $GLOBALS['config']['ENABLED_PLUGINS'] = save_plugin_config($_POST);
+            }
+            writeConfig($GLOBALS, isLoggedIn());
+        }
+        catch (Exception $e) {
+            error_log(
+                'ERROR while saving plugin configuration:.' . PHP_EOL .
+                $e->getMessage()
+            );
+
+            // TODO: do not handle exceptions/errors in JS.
+            echo '<script>alert("'. $e->getMessage() .'");document.location=\'?do='. Router::$PAGE_PLUGINSADMIN .'\';</script>';
+            exit;
+        }
+        header('Location: ?do='. Router::$PAGE_PLUGINSADMIN);
         exit;
     }
 
@@ -1859,87 +1790,71 @@ function importFile()
     }
 }
 
-// -----------------------------------------------------------------------------------------------
-// Template for the list of links (<div id="linklist">)
-// This function fills all the necessary fields in the $PAGE for the template 'linklist.html'
+/**
+ * Template for the list of links (<div id="linklist">)
+ * This function fills all the necessary fields in the $PAGE for the template 'linklist.html'
+ *
+ * @param pageBuilder $PAGE    pageBuilder instance.
+ * @param LinkDB      $LINKSDB LinkDB instance.
+ */
 function buildLinkList($PAGE,$LINKSDB)
 {
-    // ---- Filter link database according to parameters
-    $linksToDisplay=array();
-    $search_type='';
-    $search_crits='';
-    if (isset($_GET['searchterm'])) // Fulltext search
-    {
-        $linksToDisplay = $LINKSDB->filterFulltext(trim($_GET['searchterm']));
-        $search_crits=escape(trim($_GET['searchterm']));
-        $search_type='fulltext';
-    }
-    elseif (isset($_GET['searchtags'])) // Search by tag
-    {
-        $linksToDisplay = $LINKSDB->filterTags(trim($_GET['searchtags']));
-        $search_crits=explode(' ',escape(trim($_GET['searchtags'])));
-        $search_type='tags';
-    }
-    elseif (isset($_SERVER['QUERY_STRING']) && preg_match('/[a-zA-Z0-9-_@]{6}(&.+?)?/',$_SERVER['QUERY_STRING'])) // Detect smallHashes in URL
-    {
-        $linksToDisplay = $LINKSDB->filterSmallHash(substr(trim($_SERVER["QUERY_STRING"], '/'),0,6));
-        if (count($linksToDisplay)==0)
-        {
-            header($_SERVER["SERVER_PROTOCOL"]." 404 Not Found");
-            echo '<h1>404 Not found.</h1>Oh crap. The link you are trying to reach does not exist or has been deleted.';
-            echo '<br>Would you mind <a href="?">clicking here</a>?';
+    // Used in templates
+    $searchtags = !empty($_GET['searchtags']) ? escape($_GET['searchtags']) : '';
+    $searchterm = !empty($_GET['searchterm']) ? escape($_GET['searchterm']) : '';
+
+    // Smallhash filter
+    if (! empty($_SERVER['QUERY_STRING'])
+        && preg_match('/^[a-zA-Z0-9-_@]{6}($|&|#)/', $_SERVER['QUERY_STRING'])) {
+        try {
+            $linksToDisplay = $LINKSDB->filterHash($_SERVER['QUERY_STRING']);
+        } catch (LinkNotFoundException $e) {
+            $PAGE->render404($e->getMessage());
             exit;
         }
-        $search_type='permalink';
-    }
-    else
-        $linksToDisplay = $LINKSDB;  // Otherwise, display without filtering.
-
-
-    // Option: Show only private links
-    if (!empty($_SESSION['privateonly']))
-    {
-        $tmp = array();
-        foreach($linksToDisplay as $linkdate=>$link)
-        {
-            if ($link['private']!=0) $tmp[$linkdate]=$link;
-        }
-        $linksToDisplay=$tmp;
+    } else {
+        // Filter links according search parameters.
+        $privateonly = !empty($_SESSION['privateonly']);
+        $linksToDisplay = $LINKSDB->filterSearch($_GET, false, $privateonly);
     }
 
     // ---- Handle paging.
-    /* Can someone explain to me why you get the following error when using array_keys() on an object which implements the interface ArrayAccess???
-       "Warning: array_keys() expects parameter 1 to be array, object given in ... "
-       If my class implements ArrayAccess, why won't array_keys() accept it ?  ( $keys=array_keys($linksToDisplay); )
-    */
-    $keys=array(); foreach($linksToDisplay as $key=>$value) { $keys[]=$key; } // Stupid and ugly. Thanks PHP.
+    $keys = array();
+    foreach ($linksToDisplay as $key => $value) {
+        $keys[] = $key;
+    }
 
     // If there is only a single link, we change on-the-fly the title of the page.
-    if (count($linksToDisplay)==1) $GLOBALS['pagetitle'] = $linksToDisplay[$keys[0]]['title'].' - '.$GLOBALS['title'];
+    if (count($linksToDisplay) == 1) {
+        $GLOBALS['pagetitle'] = $linksToDisplay[$keys[0]]['title'].' - '.$GLOBALS['title'];
+    }
 
     // Select articles according to paging.
-    $pagecount = ceil(count($keys)/$_SESSION['LINKS_PER_PAGE']);
-    $pagecount = ($pagecount==0 ? 1 : $pagecount);
-    $page=( empty($_GET['page']) ? 1 : intval($_GET['page']));
-    $page = ( $page<1 ? 1 : $page );
-    $page = ( $page>$pagecount ? $pagecount : $page );
-    $i = ($page-1)*$_SESSION['LINKS_PER_PAGE']; // Start index.
-    $end = $i+$_SESSION['LINKS_PER_PAGE'];
-    $linkDisp=array(); // Links to display
+    $pagecount = ceil(count($keys) / $_SESSION['LINKS_PER_PAGE']);
+    $pagecount = $pagecount == 0 ? 1 : $pagecount;
+    $page= empty($_GET['page']) ? 1 : intval($_GET['page']);
+    $page = $page < 1 ? 1 : $page;
+    $page = $page > $pagecount ? $pagecount : $page;
+    // Start index.
+    $i = ($page-1) * $_SESSION['LINKS_PER_PAGE'];
+    $end = $i + $_SESSION['LINKS_PER_PAGE'];
+    $linkDisp = array();
     while ($i<$end && $i<count($keys))
     {
         $link = $linksToDisplay[$keys[$i]];
         $link['description'] = format_description($link['description'], $GLOBALS['redirector']);
-        $classLi =  $i%2!=0 ? '' : 'publicLinkHightLight';
-        $link['class'] = ($link['private']==0 ? $classLi : 'private');
-        $link['timestamp']=linkdate2timestamp($link['linkdate']);
-        $taglist = explode(' ',$link['tags']);
+        $classLi =  ($i % 2) != 0 ? '' : 'publicLinkHightLight';
+        $link['class'] = $link['private'] == 0 ? $classLi : 'private';
+        $date = DateTime::createFromFormat(LinkDB::LINK_DATE_FORMAT, $link['linkdate']);
+        $link['timestamp'] = $date->getTimestamp();
+        $taglist = explode(' ', $link['tags']);
         uasort($taglist, 'strcasecmp');
-        $link['taglist']=$taglist;
+        $link['taglist'] = $taglist;
         $link['shorturl'] = smallHash($link['linkdate']);
-        if ($link["url"][0] === '?' && // Check for both signs of a note: starting with ? and 7 chars long. I doubt that you'll post any links that look like this.
-            strlen($link["url"]) === 7) {
-            $link["url"] = index_url($_SERVER) . $link["url"];
+        // Check for both signs of a note: starting with ? and 7 chars long.
+        if ($link['url'][0] === '?' &&
+            strlen($link['url']) === 7) {
+            $link['url'] = index_url($_SERVER) . $link['url'];
         }
 
         $linkDisp[$keys[$i]] = $link;
@@ -1947,13 +1862,18 @@ function buildLinkList($PAGE,$LINKSDB)
     }
 
     // Compute paging navigation
-    $searchterm= ( empty($_GET['searchterm']) ? '' : '&searchterm='.$_GET['searchterm'] );
-    $searchtags= ( empty($_GET['searchtags']) ? '' : '&searchtags='.$_GET['searchtags'] );
-    $paging='';
-    $previous_page_url=''; if ($i!=count($keys)) $previous_page_url='?page='.($page+1).$searchterm.$searchtags;
-    $next_page_url='';if ($page>1) $next_page_url='?page='.($page-1).$searchterm.$searchtags;
+    $searchtagsUrl = empty($searchtags) ? '' : '&searchtags=' . urlencode($searchtags);
+    $searchtermUrl = empty($searchterm) ? '' : '&searchterm=' . urlencode($searchterm);
+    $previous_page_url = '';
+    if ($i != count($keys)) {
+        $previous_page_url = '?page=' . ($page+1) . $searchtermUrl . $searchtagsUrl;
+    }
+    $next_page_url='';
+    if ($page>1) {
+        $next_page_url = '?page=' . ($page-1) . $searchtermUrl . $searchtagsUrl;
+    }
 
-    $token = ''; if (isLoggedIn()) $token=getToken();
+    $token = isLoggedIn() ? getToken() : '';
 
     // Fill all template fields.
     $data = array(
@@ -1963,8 +1883,8 @@ function buildLinkList($PAGE,$LINKSDB)
         'page_current' => $page,
         'page_max' => $pagecount,
         'result_count' => count($linksToDisplay),
-        'search_type' => $search_type,
-        'search_crits' => $search_crits,
+        'search_term' => $searchterm,
+        'search_tags' => $searchtags,
         'redirector' => empty($GLOBALS['redirector']) ? '' : $GLOBALS['redirector'],  // Optional redirector URL.
         'token' => $token,
         'links' => $linkDisp,
@@ -2290,11 +2210,11 @@ function genThumbnail()
         else // This is a flickr page (html)
         {
             // Get the flickr html page.
-            list($headers, $data) = get_http_url($url, 20);
+            list($headers, $content) = get_http_response($url, 20);
             if (strpos($headers[0], '200 OK') !== false)
             {
                 // flickr now nicely provides the URL of the thumbnail in each flickr page.
-                preg_match('!<link rel=\"image_src\" href=\"(.+?)\"!',$data,$matches);
+                preg_match('!<link rel=\"image_src\" href=\"(.+?)\"!', $content, $matches);
                 if (!empty($matches[1])) $imageurl=$matches[1];
 
                 // In albums (and some other pages), the link rel="image_src" is not provided,
@@ -2302,7 +2222,7 @@ function genThumbnail()
                 // <meta property="og:image" content="http://farm4.staticflickr.com/3398/3239339068_25d13535ff_z.jpg" />
                 if ($imageurl=='')
                 {
-                    preg_match('!<meta property=\"og:image\" content=\"(.+?)\"!',$data,$matches);
+                    preg_match('!<meta property=\"og:image\" content=\"(.+?)\"!', $content, $matches);
                     if (!empty($matches[1])) $imageurl=$matches[1];
                 }
             }
@@ -2311,11 +2231,12 @@ function genThumbnail()
         if ($imageurl!='')
         {   // Let's download the image.
             // Image is 240x120, so 10 seconds to download should be enough.
-            list($headers, $data) = get_http_url($imageurl, 10);
+            list($headers, $content) = get_http_response($imageurl, 10);
             if (strpos($headers[0], '200 OK') !== false) {
-                file_put_contents($GLOBALS['config']['CACHEDIR'].'/'.$thumbname,$data); // Save image to cache.
+                // Save image to cache.
+                file_put_contents($GLOBALS['config']['CACHEDIR'].'/' . $thumbname, $content);
                 header('Content-Type: image/jpeg');
-                echo $data;
+                echo $content;
                 return;
             }
         }
@@ -2326,16 +2247,17 @@ function genThumbnail()
         // This is more complex: we have to perform a HTTP request, then parse the result.
         // Maybe we should deport this to JavaScript ? Example: http://stackoverflow.com/questions/1361149/get-img-thumbnails-from-vimeo/4285098#4285098
         $vid = substr(parse_url($url,PHP_URL_PATH),1);
-        list($headers, $data) = get_http_url('https://vimeo.com/api/v2/video/'.escape($vid).'.php', 5);
+        list($headers, $content) = get_http_response('https://vimeo.com/api/v2/video/'.escape($vid).'.php', 5);
         if (strpos($headers[0], '200 OK') !== false) {
-            $t = unserialize($data);
+            $t = unserialize($content);
             $imageurl = $t[0]['thumbnail_medium'];
             // Then we download the image and serve it to our client.
-            list($headers, $data) = get_http_url($imageurl, 10);
+            list($headers, $content) = get_http_response($imageurl, 10);
             if (strpos($headers[0], '200 OK') !== false) {
-                file_put_contents($GLOBALS['config']['CACHEDIR'].'/'.$thumbname,$data); // Save image to cache.
+                // Save image to cache.
+                file_put_contents($GLOBALS['config']['CACHEDIR'] . '/' . $thumbname, $content);
                 header('Content-Type: image/jpeg');
-                echo $data;
+                echo $content;
                 return;
             }
         }
@@ -2346,18 +2268,18 @@ function genThumbnail()
         // The thumbnail for TED talks is located in the <link rel="image_src" [...]> tag on that page
         // http://www.ted.com/talks/mikko_hypponen_fighting_viruses_defending_the_net.html
         // <link rel="image_src" href="http://images.ted.com/images/ted/28bced335898ba54d4441809c5b1112ffaf36781_389x292.jpg" />
-        list($headers, $data) = get_http_url($url, 5);
+        list($headers, $content) = get_http_response($url, 5);
         if (strpos($headers[0], '200 OK') !== false) {
             // Extract the link to the thumbnail
-            preg_match('!link rel="image_src" href="(http://images.ted.com/images/ted/.+_\d+x\d+\.jpg)"!',$data,$matches);
+            preg_match('!link rel="image_src" href="(http://images.ted.com/images/ted/.+_\d+x\d+\.jpg)"!', $content, $matches);
             if (!empty($matches[1]))
             {   // Let's download the image.
                 $imageurl=$matches[1];
                 // No control on image size, so wait long enough
-                list($headers, $data) = get_http_url($imageurl, 20);
+                list($headers, $content) = get_http_response($imageurl, 20);
                 if (strpos($headers[0], '200 OK') !== false) {
                     $filepath=$GLOBALS['config']['CACHEDIR'].'/'.$thumbname;
-                    file_put_contents($filepath,$data); // Save image to cache.
+                    file_put_contents($filepath, $content); // Save image to cache.
                     if (resizeImage($filepath))
                     {
                         header('Content-Type: image/jpeg');
@@ -2374,18 +2296,19 @@ function genThumbnail()
         // There is no thumbnail available for xkcd comics, so download the whole image and resize it.
         // http://xkcd.com/327/
         // <img src="http://imgs.xkcd.com/comics/exploits_of_a_mom.png" title="<BLABLA>" alt="<BLABLA>" />
-        list($headers, $data) = get_http_url($url, 5);
+        list($headers, $content) = get_http_response($url, 5);
         if (strpos($headers[0], '200 OK') !== false) {
             // Extract the link to the thumbnail
-            preg_match('!<img src="(http://imgs.xkcd.com/comics/.*)" title="[^s]!',$data,$matches);
+            preg_match('!<img src="(http://imgs.xkcd.com/comics/.*)" title="[^s]!', $content, $matches);
             if (!empty($matches[1]))
             {   // Let's download the image.
                 $imageurl=$matches[1];
                 // No control on image size, so wait long enough
-                list($headers, $data) = get_http_url($imageurl, 20);
+                list($headers, $content) = get_http_response($imageurl, 20);
                 if (strpos($headers[0], '200 OK') !== false) {
                     $filepath=$GLOBALS['config']['CACHEDIR'].'/'.$thumbname;
-                    file_put_contents($filepath,$data); // Save image to cache.
+                    // Save image to cache.
+                    file_put_contents($filepath, $content);
                     if (resizeImage($filepath))
                     {
                         header('Content-Type: image/jpeg');
@@ -2401,10 +2324,11 @@ function genThumbnail()
     {
         // For all other domains, we try to download the image and make a thumbnail.
         // We allow 30 seconds max to download (and downloads are limited to 4 Mb)
-        list($headers, $data) = get_http_url($url, 30);
+        list($headers, $content) = get_http_response($url, 30);
         if (strpos($headers[0], '200 OK') !== false) {
             $filepath=$GLOBALS['config']['CACHEDIR'].'/'.$thumbname;
-            file_put_contents($filepath,$data); // Save image to cache.
+            // Save image to cache.
+            file_put_contents($filepath, $content);
             if (resizeImage($filepath))
             {
                 header('Content-Type: image/jpeg');
@@ -2455,18 +2379,7 @@ function resizeImage($filepath)
     return true;
 }
 
-try {
-    mergeDeprecatedConfig($GLOBALS, isLoggedIn());
-} catch(Exception $e) {
-    error_log(
-        'ERROR while merging deprecated options.php file.' . PHP_EOL .
-        $e->getMessage()
-    );
-}
-
 if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=genthumbnail')) { genThumbnail(); exit; }  // Thumbnail generation/cache does not need the link database.
-if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=rss')) { showRSS(); exit; }
-if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=atom')) { showATOM(); exit; }
 if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=dailyrss')) { showDailyRSS(); exit; }
 if (!isset($_SESSION['LINKS_PER_PAGE'])) $_SESSION['LINKS_PER_PAGE']=$GLOBALS['config']['LINKS_PER_PAGE'];
 renderPage();

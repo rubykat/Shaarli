@@ -4,6 +4,24 @@
  */
 
 /**
+ * Logs a message to a text file
+ *
+ * The log format is compatible with fail2ban.
+ *
+ * @param string $logFile  where to write the logs
+ * @param string $clientIp the client's remote IPv4/IPv6 address
+ * @param string $message  the message to log
+ */
+function logm($logFile, $clientIp, $message)
+{
+    file_put_contents(
+        $logFile,
+        date('Y/m/d H:i:s').' - '.$clientIp.' - '.strval($message).PHP_EOL,
+        FILE_APPEND
+    );
+}
+
+/**
  *  Returns the small hash of a string, using RFC 4648 base64url format
  *
  *  Small hashes:
@@ -44,19 +62,35 @@ function endsWith($haystack, $needle, $case=true)
 }
 
 /**
- * Same as nl2br(), but escapes < and >
+ * Htmlspecialchars wrapper
+ * Support multidimensional array of strings.
+ *
+ * @param mixed $input Data to escape: a single string or an array of strings.
+ *
+ * @return string escaped.
  */
-function nl2br_escaped($html)
+function escape($input)
 {
-    return str_replace('>', '&gt;', str_replace('<', '&lt;', nl2br($html)));
+    if (is_array($input)) {
+        $out = array();
+        foreach($input as $key => $value) {
+            $out[$key] = escape($value);
+        }
+        return $out;
+    }
+    return htmlspecialchars($input, ENT_COMPAT, 'UTF-8', false);
 }
 
 /**
- * htmlspecialchars wrapper
+ * Reverse the escape function.
+ *
+ * @param string $str the string to unescape.
+ *
+ * @return string unescaped string.
  */
-function escape($str)
+function unescape($str)
 {
-    return htmlspecialchars($str, ENT_COMPAT, 'UTF-8', false);
+    return htmlspecialchars_decode($str);
 }
 
 /**
@@ -72,12 +106,14 @@ function sanitizeLink(&$link)
 
 /**
  * Checks if a string represents a valid date
+
+ * @param string $format The expected DateTime format of the string
+ * @param string $string A string-formatted date
  *
- * @param string        a string-formatted date
- * @param format        the expected DateTime format of the string
- * @return              whether the string is a valid date
- * @see                 http://php.net/manual/en/class.datetime.php
- * @see                 http://php.net/manual/en/datetime.createfromformat.php
+ * @return bool whether the string is a valid date
+ *
+ * @see http://php.net/manual/en/class.datetime.php
+ * @see http://php.net/manual/en/datetime.createfromformat.php
  */
 function checkDateFormat($format, $string)
 {
@@ -198,6 +234,31 @@ function space2nbsp($text)
  *
  * @return string formatted description.
  */
-function format_description($description, $redirector) {
+function format_description($description, $redirector = false) {
     return nl2br(space2nbsp(text2clickable($description, $redirector)));
+}
+
+/**
+ * Sniff browser language to set the locale automatically.
+ * Note that is may not work on your server if the corresponding locale is not installed.
+ *
+ * @param string $headerLocale Locale send in HTTP headers (e.g. "fr,fr-fr;q=0.8,en;q=0.5,en-us;q=0.3").
+ **/
+function autoLocale($headerLocale)
+{
+    // Default if browser does not send HTTP_ACCEPT_LANGUAGE
+    $attempts = array('en_US');
+    if (isset($headerLocale)) {
+        // (It's a bit crude, but it works very well. Preferred language is always presented first.)
+        if (preg_match('/([a-z]{2})-?([a-z]{2})?/i', $headerLocale, $matches)) {
+            $loc = $matches[1] . (!empty($matches[2]) ? '_' . strtoupper($matches[2]) : '');
+            $attempts = array(
+                $loc.'.UTF-8', $loc, str_replace('_', '-', $loc).'.UTF-8', str_replace('_', '-', $loc),
+                $loc . '_' . strtoupper($loc).'.UTF-8', $loc . '_' . strtoupper($loc),
+                $loc . '_' . $loc.'.UTF-8', $loc . '_' . $loc, $loc . '-' . strtoupper($loc).'.UTF-8',
+                $loc . '-' . strtoupper($loc), $loc . '-' . $loc.'.UTF-8', $loc . '-' . $loc
+            );
+        }
+    }
+    setlocale(LC_ALL, $attempts);
 }
