@@ -17,8 +17,20 @@ class LinkDBTest extends PHPUnit_Framework_TestCase
 {
     // datastore to test write operations
     protected static $testDatastore = 'sandbox/datastore.php';
+
+    /**
+     * @var ReferenceLinkDB instance.
+     */
     protected static $refDB = null;
+
+    /**
+     * @var LinkDB public LinkDB instance.
+     */
     protected static $publicLinkDB = null;
+
+    /**
+     * @var LinkDB private LinkDB instance.
+     */
     protected static $privateLinkDB = null;
 
     /**
@@ -276,7 +288,9 @@ class LinkDBTest extends PHPUnit_Framework_TestCase
                 'media' => 1,
                 'software' => 1,
                 'stallman' => 1,
-                'free' => 1
+                'free' => 1,
+                '-exclude' => 1,
+                'stuff' => 2,
             ),
             self::$publicLinkDB->allTags()
         );
@@ -295,220 +309,12 @@ class LinkDBTest extends PHPUnit_Framework_TestCase
                 'html' => 1,
                 'w3c' => 1,
                 'css' => 1,
-                'Mercurial' => 1
+                'Mercurial' => 1,
+                'stuff' => 2,
+                '-exclude' => 1,
+                '.hidden' => 1,
             ),
             self::$privateLinkDB->allTags()
-        );
-    }
-
-    /**
-     * Filter links using a tag
-     */
-    public function testFilterOneTag()
-    {
-        $this->assertEquals(
-            3,
-            sizeof(self::$publicLinkDB->filterTags('web', false))
-        );
-
-        $this->assertEquals(
-            4,
-            sizeof(self::$privateLinkDB->filterTags('web', false))
-        );
-    }
-
-    /**
-     * Filter links using a tag - case-sensitive
-     */
-    public function testFilterCaseSensitiveTag()
-    {
-        $this->assertEquals(
-            0,
-            sizeof(self::$privateLinkDB->filterTags('mercurial', true))
-        );
-
-        $this->assertEquals(
-            1,
-            sizeof(self::$privateLinkDB->filterTags('Mercurial', true))
-        );
-    }
-
-    /**
-     * Filter links using a tag combination
-     */
-    public function testFilterMultipleTags()
-    {
-        $this->assertEquals(
-            1,
-            sizeof(self::$publicLinkDB->filterTags('dev cartoon', false))
-        );
-
-        $this->assertEquals(
-            2,
-            sizeof(self::$privateLinkDB->filterTags('dev cartoon', false))
-        );
-    }
-
-    /**
-     * Filter links using a non-existent tag
-     */
-    public function testFilterUnknownTag()
-    {
-        $this->assertEquals(
-            0,
-            sizeof(self::$publicLinkDB->filterTags('null', false))
-        );
-    }
-
-    /**
-     * Return links for a given day
-     */
-    public function testFilterDay()
-    {
-        $this->assertEquals(
-            2,
-            sizeof(self::$publicLinkDB->filterDay('20121206'))
-        );
-
-        $this->assertEquals(
-            3,
-            sizeof(self::$privateLinkDB->filterDay('20121206'))
-        );
-    }
-
-    /**
-     * 404 - day not found
-     */
-    public function testFilterUnknownDay()
-    {
-        $this->assertEquals(
-            0,
-            sizeof(self::$publicLinkDB->filterDay('19700101'))
-        );
-
-        $this->assertEquals(
-            0,
-            sizeof(self::$privateLinkDB->filterDay('19700101'))
-        );
-    }
-
-    /**
-     * Use an invalid date format
-     * @expectedException              Exception
-     * @expectedExceptionMessageRegExp /Invalid date format/
-     */
-    public function testFilterInvalidDayWithChars()
-    {
-        self::$privateLinkDB->filterDay('Rainy day, dream away');
-    }
-
-    /**
-     * Use an invalid date format
-     * @expectedException              Exception
-     * @expectedExceptionMessageRegExp /Invalid date format/
-     */
-    public function testFilterInvalidDayDigits()
-    {
-        self::$privateLinkDB->filterDay('20');
-    }
-
-    /**
-     * Retrieve a link entry with its hash
-     */
-    public function testFilterSmallHash()
-    {
-        $links = self::$privateLinkDB->filterSmallHash('IuWvgA');
-
-        $this->assertEquals(
-            1,
-            sizeof($links)
-        );
-
-        $this->assertEquals(
-            'MediaGoblin',
-            $links['20130614_184135']['title']
-        );
-        
-    }
-
-    /**
-     * No link for this hash
-     */
-    public function testFilterUnknownSmallHash()
-    {
-        $this->assertEquals(
-            0,
-            sizeof(self::$privateLinkDB->filterSmallHash('Iblaah'))
-        );
-    }
-
-    /**
-     * Full-text search - result from a link's URL
-     */
-    public function testFilterFullTextURL()
-    {
-        $this->assertEquals(
-            2,
-            sizeof(self::$publicLinkDB->filterFullText('ars.userfriendly.org'))
-        );
-    }
-
-    /**
-     * Full-text search - result from a link's title only
-     */
-    public function testFilterFullTextTitle()
-    {
-        // use miscellaneous cases
-        $this->assertEquals(
-            2,
-            sizeof(self::$publicLinkDB->filterFullText('userfriendly -'))
-        );
-        $this->assertEquals(
-            2,
-            sizeof(self::$publicLinkDB->filterFullText('UserFriendly -'))
-        );
-        $this->assertEquals(
-            2,
-            sizeof(self::$publicLinkDB->filterFullText('uSeRFrIendlY -'))
-        );
-
-        // use miscellaneous case and offset
-        $this->assertEquals(
-            2,
-            sizeof(self::$publicLinkDB->filterFullText('RFrIendL'))
-        );
-    }
-
-    /**
-     * Full-text search - result from the link's description only
-     */
-    public function testFilterFullTextDescription()
-    {
-        $this->assertEquals(
-            1,
-            sizeof(self::$publicLinkDB->filterFullText('media publishing'))
-        );
-    }
-
-    /**
-     * Full-text search - result from the link's tags only
-     */
-    public function testFilterFullTextTags()
-    {
-        $this->assertEquals(
-            2,
-            sizeof(self::$publicLinkDB->filterFullText('gnu'))
-        );
-    }
-
-    /**
-     * Full-text search - result set from mixed sources
-     */
-    public function testFilterFullTextMixed()
-    {
-        $this->assertEquals(
-            2,
-            sizeof(self::$publicLinkDB->filterFullText('free software'))
         );
     }
 
@@ -533,5 +339,83 @@ class LinkDBTest extends PHPUnit_Framework_TestCase
         foreach($db as $link) {
             $this->assertStringStartsWith($redirector, $link['real_url']);
         }
+    }
+
+    /**
+     * Test filter with string.
+     */
+    public function testFilterString()
+    {
+        $tags = 'dev cartoon';
+        $request = array('searchtags' => $tags);
+        $this->assertEquals(
+            2,
+            count(self::$privateLinkDB->filterSearch($request, true, false))
+        );
+    }
+
+    /**
+     * Test filter with string.
+     */
+    public function testFilterArray()
+    {
+        $tags = array('dev', 'cartoon');
+        $request = array('searchtags' => $tags);
+        $this->assertEquals(
+            2,
+            count(self::$privateLinkDB->filterSearch($request, true, false))
+        );
+    }
+
+    /**
+     * Test hidden tags feature:
+     *  tags starting with a dot '.' are only visible when logged in.
+     */
+    public function testHiddenTags()
+    {
+        $tags = '.hidden';
+        $request = array('searchtags' => $tags);
+        $this->assertEquals(
+            1,
+            count(self::$privateLinkDB->filterSearch($request, true, false))
+        );
+
+        $this->assertEquals(
+            0,
+            count(self::$publicLinkDB->filterSearch($request, true, false))
+        );
+    }
+
+    /**
+     * Test filterHash() with a valid smallhash.
+     */
+    public function testFilterHashValid()
+    {
+        $request = smallHash('20150310_114651');
+        $this->assertEquals(
+            1,
+            count(self::$publicLinkDB->filterHash($request))
+        );
+    }
+
+    /**
+     * Test filterHash() with an invalid smallhash.
+     *
+     * @expectedException LinkNotFoundException
+     */
+    public function testFilterHashInValid1()
+    {
+        $request = 'blabla';
+        self::$publicLinkDB->filterHash($request);
+    }
+
+    /**
+     * Test filterHash() with an empty smallhash.
+     *
+     * @expectedException LinkNotFoundException
+     */
+    public function testFilterHashInValid()
+    {
+        self::$publicLinkDB->filterHash('');
     }
 }
