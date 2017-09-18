@@ -1,0 +1,80 @@
+/* ================================================================== */
+/* THEME: Matrix
+ * medium background, dark text, black header 
+ *
+ * This only defines fonts, colours and borders, not layout.
+ */
+/* ================================================================== */
+/* General */
+#pageheader,
+#footer,
+.shadow {
+	color: white;
+	background-color: black;
+	background-image: url(dkgreen2.jpg);
+    	border-color: #005500;
+}
+
+body {
+	color: black;
+	background-color: #aaf2aa;
+	background-image: url(ltgreen1.jpg);
+	border-color: #001100;
+}
+
+.showme, .hideme {
+    	border-color: #005500;
+	color: white;
+	background-color: #113311;
+}
+
+/* links */
+A:link, .button {
+	color: #000066;
+}
+A:visited {
+	color: #660000;
+}
+A:link:active, .button:active {
+	color: #00FF00;
+}
+/* white on dark in nav areas */
+.shadow a:link,
+#footer a:link,
+#pageheader a:link,
+.shadow .button,
+#footer .button,
+#pageheader .button {
+	color: #aaf2aa;
+}
+.shadow a:visited,
+#footer a:visited,
+#pageheader a:visited {
+	color: #f2cda9;
+}
+
+/* ------------------------------------------------------------------ */
+/* Fonts */
+H1, H2, H3, H4 {
+	font-family: Plasmatic, LarabieFont, verdana, sans-serif;
+	font-weight: normal;
+	color: black;
+}
+
+/* ------------------------------------*/
+/* MENUS: navbar */
+#navbar a,
+#navbar .selflink,
+#navbar .current a {
+    	border-color: #005500;
+	color: white;
+	background-color: #113311;
+}
+#navbar li {
+	border-color: #113311;
+}
+#navbar .selflink, #navbar em, #navbar .current a {
+	color: black;
+	background-color: #aaf2aa;
+}
+

@@ -1,0 +1,67 @@
+/* ======================================
+ * FLEX layout ALTERED FOR SHAARLI
+ */
+
+/* ---------------------------------------------------- */
+/* Secondary:
+ * borders
+ * navbar, actions, navside
+ * backlinks, tags
+ */
+#pageheader,
+#footer,
+.shadow {
+    border: solid 1px black;
+    border-radius: 2em;
+    margin: 1em;
+    padding: 1em;
+    box-shadow:rgba(0,0,0,0.8) 3px 3px 10px;
+}
+
+/* ---------------- */
+#navbar {
+	width:100%;
+	font-size: 0.9em;
+	font-family: sans;
+	margin-bottom: 0.5em;
+}
+
+#navbar ul {
+	margin:0;
+	padding: 0;
+	list-style:none;
+}
+#navbar li {
+	display: inline-block;
+	margin:0;
+	padding:0;
+}
+#navbar a, #navbar .selflink, #navbar em, #navbar .current a {
+	display: block;
+	background-image: url(gloss.png);
+	background-repeat: repeat-x;
+	padding-left: 10px;
+	padding-right: 10px;
+	padding-top: 2px;
+	padding-bottom: 2px;
+	border-style: solid;
+	border-width: 1px;
+	text-decoration: none;
+	margin-top: 5px;
+	margin-left: 0;
+    border-radius: 20px 5px 20px 5px;
+} 
+
+#navbar a:hover {
+	text-decoration: underline;
+}
+#navbar a:active {
+	background-image: url(gloss3.png);
+	background-repeat: repeat-x;
+}
+#navbar .selflink, #navbar em, #navbar .current a {
+	font-style: normal;
+	font-weight: bold;
+	background-image: none;
+}
+

@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>{include="includes"}</head>
+<body>
+<div id="pagewrap">
+	<div id="pageheader">{include="page.header"}</div>
+<div id="inner">
+<div id="mainwrap"><div id="maincontent">
+    You body goes here...
+</div> <!-- /maincontent -->
+</div> <!-- /mainwrap -->
+    {include="page.footer"}
+</div> <!-- /inner -->
+</div> <!-- /pagewrap -->
+</body>
+</html>
