@@ -85,6 +85,7 @@ class UrlTest extends PHPUnit_Framework_TestCase
         $this->assertUrlIsCleaned('?utm_term=1n4l');
 
         $this->assertUrlIsCleaned('?xtor=some-url');
+        $this->assertUrlIsCleaned('?PHPSESSID=012345678910111213');
     }
 
     /**
@@ -128,6 +129,13 @@ class UrlTest extends PHPUnit_Framework_TestCase
             self::$baseUrl.'?my=stuff&is=kept#again',
             $url->cleanup()
         );
+
+        // test firefox reader url
+        $url = new Url(
+            'about://reader?url=' . urlencode(self::$baseUrl .'?my=stuff&is=kept')
+        );
+        $this->assertEquals(self::$baseUrl.'?my=stuff&is=kept', $url->cleanup());
+
     }
 
     /**
@@ -149,7 +157,7 @@ class UrlTest extends PHPUnit_Framework_TestCase
     /**
      * Test add trailing slash.
      */
-    function testAddTrailingSlash()
+    public function testAddTrailingSlash()
     {
         $strOn = 'http://randomstr.com/test/';
         $strOff = 'http://randomstr.com/test';
@@ -160,7 +168,7 @@ class UrlTest extends PHPUnit_Framework_TestCase
     /**
      * Test valid HTTP url.
      */
-    function testUrlIsHttp()
+    public function testUrlIsHttp()
     {
         $url = new Url(self::$baseUrl);
         $this->assertTrue($url->isHttp());
@@ -169,9 +177,24 @@ class UrlTest extends PHPUnit_Framework_TestCase
     /**
      * Test non HTTP url.
      */
-    function testUrlIsNotHttp()
+    public function testUrlIsNotHttp()
     {
         $url = new Url('ftp://save.tld/mysave');
         $this->assertFalse($url->isHttp());
+    }
+
+    /**
+     * Test International Domain Name to ASCII conversion
+     */
+    public function testIdnToAscii()
+    {
+        $ind = 'http://www.académie-française.fr/';
+        $expected = 'http://www.xn--acadmie-franaise-npb1a.fr/';
+        $url = new Url($ind);
+        $this->assertEquals($expected, $url->idnToAscii());
+
+        $notInd = 'http://www.academie-francaise.fr/';
+        $url = new Url($notInd);
+        $this->assertEquals($notInd, $url->idnToAscii());
     }
 }

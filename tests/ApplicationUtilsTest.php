@@ -1,4 +1,6 @@
 <?php
+use Shaarli\Config\ConfigManager;
+
 /**
  * ApplicationUtils' tests
  */
@@ -15,7 +17,7 @@ class FakeApplicationUtils extends ApplicationUtils
     /**
      * Toggle HTTP requests, allow overriding the version code
      */
-    public static function getLatestGitVersionCode($url, $timeout=0)
+    public static function getVersion($url, $timeout=0)
     {
         return self::$VERSION_CODE;
     }
@@ -43,40 +45,65 @@ class ApplicationUtilsTest extends PHPUnit_Framework_TestCase
     }
 
     /**
+     * Remove test version file if it exists
+     */
+    public function tearDown()
+    {
+        if (is_file('sandbox/version.php')) {
+            unlink('sandbox/version.php');
+        }
+    }
+
+    /**
      * Retrieve the latest version code available on Git
      *
      * Expected format: Semantic Versioning - major.minor.patch
      */
-    public function testGetLatestGitVersionCode()
+    public function testGetVersionCode()
     {
         $testTimeout = 10;
 
         $this->assertEquals(
             '0.5.4',
-            ApplicationUtils::getLatestGitVersionCode(
+            ApplicationUtils::getVersion(
                 'https://raw.githubusercontent.com/shaarli/Shaarli/'
                .'v0.5.4/shaarli_version.php',
                 $testTimeout
             )
         );
-        $this->assertRegexp(
+        $this->assertRegExp(
             self::$versionPattern,
-            ApplicationUtils::getLatestGitVersionCode(
+            ApplicationUtils::getVersion(
                 'https://raw.githubusercontent.com/shaarli/Shaarli/'
-               .'master/shaarli_version.php',
+               .'latest/shaarli_version.php',
                 $testTimeout
             )
         );
     }
 
     /**
-     * Attempt to retrieve the latest version from an invalid URL
+     * Attempt to retrieve the latest version from an invalid File
      */
-    public function testGetLatestGitVersionCodeInvalidUrl()
+    public function testGetVersionCodeFromFile()
     {
-        $this->assertFalse(
-            ApplicationUtils::getLatestGitVersionCode('htttp://null.io', 1)
+        file_put_contents('sandbox/version.php', '<?php /* 1.2.3 */ ?>'. PHP_EOL);
+        $this->assertEquals(
+            '1.2.3',
+            ApplicationUtils::getVersion('sandbox/version.php', 1)
         );
+    }
+
+    /**
+     * Attempt to retrieve the latest version from an invalid File
+     */
+    public function testGetVersionCodeInvalidFile()
+    {
+        $oldlog = ini_get('error_log');
+        ini_set('error_log', '/dev/null');
+        $this->assertFalse(
+            ApplicationUtils::getVersion('idontexist', 1)
+        );
+        ini_set('error_log', $oldlog);
     }
 
     /**
@@ -275,21 +302,22 @@ class ApplicationUtilsTest extends PHPUnit_Framework_TestCase
      */
     public function testCheckCurrentResourcePermissions()
     {
-        $config = array(
-            'CACHEDIR' => 'cache',
-            'CONFIG_FILE' => 'data/config.php',
-            'DATADIR' => 'data',
-            'DATASTORE' => 'data/datastore.php',
-            'IPBANS_FILENAME' => 'data/ipbans.php',
-            'LOG_FILE' => 'data/log.txt',
-            'PAGECACHE' => 'pagecache',
-            'RAINTPL_TMP' => 'tmp',
-            'RAINTPL_TPL' => 'tpl',
-            'UPDATECHECK_FILENAME' => 'data/lastupdatecheck.txt'
-        );
+        $conf = new ConfigManager('');
+        $conf->set('resource.thumbnails_cache', 'cache');
+        $conf->set('resource.config', 'data/config.php');
+        $conf->set('resource.data_dir', 'data');
+        $conf->set('resource.datastore', 'data/datastore.php');
+        $conf->set('resource.ban_file', 'data/ipbans.php');
+        $conf->set('resource.log', 'data/log.txt');
+        $conf->set('resource.page_cache', 'pagecache');
+        $conf->set('resource.raintpl_tmp', 'tmp');
+        $conf->set('resource.raintpl_tpl', 'tpl');
+        $conf->set('resource.theme', 'default');
+        $conf->set('resource.update_check', 'data/lastupdatecheck.txt');
+
         $this->assertEquals(
             array(),
-            ApplicationUtils::checkResourcePermissions($config)
+            ApplicationUtils::checkResourcePermissions($conf)
         );
     }
 
@@ -298,21 +326,22 @@ class ApplicationUtilsTest extends PHPUnit_Framework_TestCase
      */
     public function testCheckCurrentResourcePermissionsErrors()
     {
-        $config = array(
-            'CACHEDIR' => 'null/cache',
-            'CONFIG_FILE' => 'null/data/config.php',
-            'DATADIR' => 'null/data',
-            'DATASTORE' => 'null/data/store.php',
-            'IPBANS_FILENAME' => 'null/data/ipbans.php',
-            'LOG_FILE' => 'null/data/log.txt',
-            'PAGECACHE' => 'null/pagecache',
-            'RAINTPL_TMP' => 'null/tmp',
-            'RAINTPL_TPL' => 'null/tpl',
-            'UPDATECHECK_FILENAME' => 'null/data/lastupdatecheck.txt'
-        );
+        $conf = new ConfigManager('');
+        $conf->set('resource.thumbnails_cache', 'null/cache');
+        $conf->set('resource.config', 'null/data/config.php');
+        $conf->set('resource.data_dir', 'null/data');
+        $conf->set('resource.datastore', 'null/data/store.php');
+        $conf->set('resource.ban_file', 'null/data/ipbans.php');
+        $conf->set('resource.log', 'null/data/log.txt');
+        $conf->set('resource.page_cache', 'null/pagecache');
+        $conf->set('resource.raintpl_tmp', 'null/tmp');
+        $conf->set('resource.raintpl_tpl', 'null/tpl');
+        $conf->set('resource.raintpl_theme', 'null/tpl/default');
+        $conf->set('resource.update_check', 'null/data/lastupdatecheck.txt');
         $this->assertEquals(
             array(
                 '"null/tpl" directory is not readable',
+                '"null/tpl/default" directory is not readable',
                 '"null/cache" directory is not readable',
                 '"null/cache" directory is not writable',
                 '"null/data" directory is not readable',
@@ -322,7 +351,18 @@ class ApplicationUtilsTest extends PHPUnit_Framework_TestCase
                 '"null/tmp" directory is not readable',
                 '"null/tmp" directory is not writable'
             ),
-            ApplicationUtils::checkResourcePermissions($config)
+            ApplicationUtils::checkResourcePermissions($conf)
+        );
+    }
+
+    /**
+     * Check update with 'dev' as curent version (master branch).
+     * It should always return false.
+     */
+    public function testCheckUpdateDev()
+    {
+        $this->assertFalse(
+            ApplicationUtils::checkUpdate('dev', self::$testUpdateFile, 100, true, true)
         );
     }
 }
