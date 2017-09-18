@@ -64,6 +64,30 @@ function add_trailing_slash($url)
 }
 
 /**
+ * Replace not whitelisted protocols by 'http://' from given URL.
+ *
+ * @param string $url       URL to clean
+ * @param array  $protocols List of allowed protocols (aside from http(s)).
+ *
+ * @return string URL with allowed protocol
+ */
+function whitelist_protocols($url, $protocols)
+{
+    if (startsWith($url, '?') || startsWith($url, '/')) {
+        return $url;
+    }
+    $protocols = array_merge(['http', 'https'], $protocols);
+    $protocol = preg_match('#^(\w+):/?/?#', $url, $match);
+    // Protocol not allowed: we remove it and replace it with http
+    if ($protocol === 1 && ! in_array($match[1], $protocols)) {
+        $url = str_replace($match[0], 'http://', $url);
+    } else if ($protocol !== 1) {
+        $url = 'http://' . $url;
+    }
+    return $url;
+}
+
+/**
  * URL representation and cleanup utilities
  *
  * Form
@@ -85,6 +109,7 @@ class Url
         'action_type_map=',
         'fb_',
         'fb=',
+        'PHPSESSID=',
 
         // Scoop.it
         '__scoop',
@@ -93,7 +118,10 @@ class Url
         'utm_',
 
         // ATInternet
-        'xtor='
+        'xtor=',
+
+        // Other
+        'campaign_'
     );
 
     private static $annoyingFragments = array(
@@ -118,13 +146,43 @@ class Url
      */
     public function __construct($url)
     {
-        $this->parts = parse_url(trim($url));
+        $url = self::cleanupUnparsedUrl(trim($url));
+        $this->parts = parse_url($url);
 
         if (!empty($url) && empty($this->parts['scheme'])) {
             $this->parts['scheme'] = 'http';
         }
     }
 
+    /**
+     * Clean up URL before it's parsed.
+     * ie. handle urlencode, url prefixes, etc.
+     *
+     * @param string $url URL to clean.
+     *
+     * @return string cleaned URL.
+     */
+    protected static function cleanupUnparsedUrl($url)
+    {
+        return self::removeFirefoxAboutReader($url);
+    }
+
+    /**
+     * Remove Firefox Reader prefix if it's present.
+     *
+     * @param string $input url
+     *
+     * @return string cleaned url
+     */
+    protected static function removeFirefoxAboutReader($input)
+    {
+        $firefoxPrefix = 'about://reader?url=';
+        if (startsWith($input, $firefoxPrefix)) {
+            return urldecode(ltrim($input, $firefoxPrefix));
+        }
+        return $input;
+    }
+    
     /**
      * Returns a string representation of this URL
      */
@@ -191,6 +249,22 @@ class Url
     }
 
     /**
+     * Converts an URL with an International Domain Name host to a ASCII one.
+     * This requires PHP-intl. If it's not available, just returns this->cleanup().
+     *
+     * @return string converted cleaned up URL.
+     */
+    public function idnToAscii()
+    {
+        $out = $this->cleanup();
+        if (! function_exists('idn_to_ascii') || ! isset($this->parts['host'])) {
+            return $out;
+        }
+        $asciiHost = idn_to_ascii($this->parts['host']);
+        return str_replace($this->parts['host'], $asciiHost, $out);
+    }
+
+    /**
      * Get URL scheme.
      *
      * @return string the URL scheme or false if none is provided.
@@ -200,6 +274,18 @@ class Url
             return false;
         }
         return $this->parts['scheme'];
+    }
+
+    /**
+     * Get URL host.
+     *
+     * @return string the URL host or false if none is provided.
+     */
+    public function getHost() {
+        if (empty($this->parts['host'])) {
+            return false;
+        }
+        return $this->parts['host'];
     }
 
     /**

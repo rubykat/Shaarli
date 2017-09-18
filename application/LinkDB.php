@@ -6,14 +6,15 @@
  *
  * Example:
  *    $myLinks = new LinkDB();
- *    echo $myLinks['20110826_161819']['title'];
+ *    echo $myLinks[350]['title'];
  *    foreach ($myLinks as $link)
  *       echo $link['title'].' at url '.$link['url'].'; description:'.$link['description'];
  *
  * Available keys:
+ *  - id:       primary key, incremental integer identifier (persistent)
  *  - description: description of the entry
- *  - linkdate: date of the creation of this entry, in the form YYYYMMDD_HHMMSS
- *              (e.g.'20110914_192317')
+ *  - created:  creation date of this entry, DateTime object.
+ *  - updated:  last modification date of this entry, DateTime object.
  *  - private:  Is this link private? 0=no, other value=yes
  *  - tags:     tags attached to this entry (separated by spaces)
  *  - title     Title of the link
@@ -21,68 +22,100 @@
  *              Can be absolute or relative.
  *              Relative URLs are permalinks (e.g.'?m-ukcw')
  *  - real_url  Absolute processed URL.
+ *  - shorturl  Permalink smallhash
  *
  * Implements 3 interfaces:
  *  - ArrayAccess: behaves like an associative array;
  *  - Countable:   there is a count() method;
  *  - Iterator:    usable in foreach () loops.
+ *
+ * ID mechanism:
+ *   ArrayAccess is implemented in a way that will allow to access a link
+ *   with the unique identifier ID directly with $link[ID].
+ *   Note that it's not the real key of the link array attribute.
+ *   This mechanism is in place to have persistent link IDs,
+ *   even though the internal array is reordered by date.
+ *   Example:
+ *     - DB: link #1 (2010-01-01) link #2 (2016-01-01)
+ *     - Order: #2 #1
+ *     - Import links containing: link #3 (2013-01-01)
+ *     - New DB: link #1 (2010-01-01) link #2 (2016-01-01) link #3 (2013-01-01)
+ *     - Real order: #2 #3 #1
  */
 class LinkDB implements Iterator, Countable, ArrayAccess
 {
     // Links are stored as a PHP serialized string
-    private $_datastore;
+    private $datastore;
 
     // Link date storage format
     const LINK_DATE_FORMAT = 'Ymd_His';
 
-    // Datastore PHP prefix
-    protected static $phpPrefix = '<?php /* ';
-
-    // Datastore PHP suffix
-    protected static $phpSuffix = ' */ ?>';
-
     // List of links (associative array)
     //  - key:   link date (e.g. "20110823_124546"),
     //  - value: associative array (keys: title, description...)
-    private $_links;
+    private $links;
 
-    // List of all recorded URLs (key=url, value=linkdate)
-    // for fast reserve search (url-->linkdate)
-    private $_urls;
+    // List of all recorded URLs (key=url, value=link offset)
+    // for fast reserve search (url-->link offset)
+    private $urls;
 
-    // List of linkdate keys (for the Iterator interface implementation)
-    private $_keys;
+    /**
+     * @var array List of all links IDS mapped with their array offset.
+     *            Map: id->offset.
+     */
+    protected $ids;
 
-    // Position in the $this->_keys array (for the Iterator interface)
-    private $_position;
+    // List of offset keys (for the Iterator interface implementation)
+    private $keys;
+
+    // Position in the $this->keys array (for the Iterator interface)
+    private $position;
 
     // Is the user logged in? (used to filter private links)
-    private $_loggedIn;
+    private $loggedIn;
 
     // Hide public links
-    private $_hidePublicLinks;
+    private $hidePublicLinks;
 
     // link redirector set in user settings.
-    private $_redirector;
+    private $redirector;
+
+    /**
+     * Set this to `true` to urlencode link behind redirector link, `false` to leave it untouched.
+     *
+     * Example:
+     *   anonym.to needs clean URL while dereferer.org needs urlencoded URL.
+     *
+     * @var boolean $redirectorEncode parameter: true or false
+     */
+    private $redirectorEncode;
 
     /**
      * Creates a new LinkDB
      *
      * Checks if the datastore exists; else, attempts to create a dummy one.
      *
-     * @param string  $datastore       datastore file path.
-     * @param boolean $isLoggedIn      is the user logged in?
-     * @param boolean $hidePublicLinks if true all links are private.
-     * @param string  $redirector      link redirector set in user settings.
+     * @param string  $datastore        datastore file path.
+     * @param boolean $isLoggedIn       is the user logged in?
+     * @param boolean $hidePublicLinks  if true all links are private.
+     * @param string  $redirector       link redirector set in user settings.
+     * @param boolean $redirectorEncode Enable urlencode on redirected urls (default: true).
      */
-    function __construct($datastore, $isLoggedIn, $hidePublicLinks, $redirector = '')
+    public function __construct(
+        $datastore,
+        $isLoggedIn,
+        $hidePublicLinks,
+        $redirector = '',
+        $redirectorEncode = true
+    )
     {
-        $this->_datastore = $datastore;
-        $this->_loggedIn = $isLoggedIn;
-        $this->_hidePublicLinks = $hidePublicLinks;
-        $this->_redirector = $redirector;
-        $this->_checkDB();
-        $this->_readDB();
+        $this->datastore = $datastore;
+        $this->loggedIn = $isLoggedIn;
+        $this->hidePublicLinks = $hidePublicLinks;
+        $this->redirector = $redirector;
+        $this->redirectorEncode = $redirectorEncode === true;
+        $this->check();
+        $this->read();
     }
 
     /**
@@ -90,7 +123,7 @@ class LinkDB implements Iterator, Countable, ArrayAccess
      */
     public function count()
     {
-        return count($this->_links);
+        return count($this->links);
     }
 
     /**
@@ -99,17 +132,29 @@ class LinkDB implements Iterator, Countable, ArrayAccess
     public function offsetSet($offset, $value)
     {
         // TODO: use exceptions instead of "die"
-        if (!$this->_loggedIn) {
+        if (!$this->loggedIn) {
             die('You are not authorized to add a link.');
         }
-        if (empty($value['linkdate']) || empty($value['url'])) {
-            die('Internal Error: A link should always have a linkdate and URL.');
+        if (!isset($value['id']) || empty($value['url'])) {
+            die('Internal Error: A link should always have an id and URL.');
         }
-        if (empty($offset)) {
-            die('You must specify a key.');
+        if (($offset !== null && ! is_int($offset)) || ! is_int($value['id'])) {
+            die('You must specify an integer as a key.');
         }
-        $this->_links[$offset] = $value;
-        $this->_urls[$value['url']]=$offset;
+        if ($offset !== null && $offset !== $value['id']) {
+            die('Array offset and link ID must be equal.');
+        }
+
+        // If the link exists, we reuse the real offset, otherwise new entry
+        $existing = $this->getLinkOffset($offset);
+        if ($existing !== null) {
+            $offset = $existing;
+        } else {
+            $offset = count($this->links);
+        }
+        $this->links[$offset] = $value;
+        $this->urls[$value['url']] = $offset;
+        $this->ids[$value['id']] = $offset;
     }
 
     /**
@@ -117,7 +162,7 @@ class LinkDB implements Iterator, Countable, ArrayAccess
      */
     public function offsetExists($offset)
     {
-        return array_key_exists($offset, $this->_links);
+        return array_key_exists($this->getLinkOffset($offset), $this->links);
     }
 
     /**
@@ -125,13 +170,15 @@ class LinkDB implements Iterator, Countable, ArrayAccess
      */
     public function offsetUnset($offset)
     {
-        if (!$this->_loggedIn) {
+        if (!$this->loggedIn) {
             // TODO: raise an exception
             die('You are not authorized to delete a link.');
         }
-        $url = $this->_links[$offset]['url'];
-        unset($this->_urls[$url]);
-        unset($this->_links[$offset]);
+        $realOffset = $this->getLinkOffset($offset);
+        $url = $this->links[$realOffset]['url'];
+        unset($this->urls[$url]);
+        unset($this->ids[$realOffset]);
+        unset($this->links[$realOffset]);
     }
 
     /**
@@ -139,31 +186,32 @@ class LinkDB implements Iterator, Countable, ArrayAccess
      */
     public function offsetGet($offset)
     {
-        return isset($this->_links[$offset]) ? $this->_links[$offset] : null;
+        $realOffset = $this->getLinkOffset($offset);
+        return isset($this->links[$realOffset]) ? $this->links[$realOffset] : null;
     }
 
     /**
      * Iterator - Returns the current element
      */
-    function current()
+    public function current()
     {
-        return $this->_links[$this->_keys[$this->_position]];
+        return $this[$this->keys[$this->position]];
     }
 
     /**
      * Iterator - Returns the key of the current element
      */
-    function key()
+    public function key()
     {
-        return $this->_keys[$this->_position];
+        return $this->keys[$this->position];
     }
 
     /**
      * Iterator - Moves forward to next element
      */
-    function next()
+    public function next()
     {
-        ++$this->_position;
+        ++$this->position;
     }
 
     /**
@@ -171,19 +219,18 @@ class LinkDB implements Iterator, Countable, ArrayAccess
      *
      * Entries are sorted by date (latest first)
      */
-    function rewind()
+    public function rewind()
     {
-        $this->_keys = array_keys($this->_links);
-        rsort($this->_keys);
-        $this->_position = 0;
+        $this->keys = array_keys($this->ids);
+        $this->position = 0;
     }
 
     /**
      * Iterator - Checks if current position is valid
      */
-    function valid()
+    public function valid()
     {
-        return isset($this->_keys[$this->_position]);
+        return isset($this->keys[$this->position]);
     }
 
     /**
@@ -191,99 +238,105 @@ class LinkDB implements Iterator, Countable, ArrayAccess
      *
      * If no DB file is found, creates a dummy DB.
      */
-    private function _checkDB()
+    private function check()
     {
-        if (file_exists($this->_datastore)) {
+        if (file_exists($this->datastore)) {
             return;
         }
 
         // Create a dummy database for example
-        $this->_links = array();
+        $this->links = array();
         $link = array(
+            'id' => 1,
             'title'=>' Shaarli: the personal, minimalist, super-fast, no-database delicious clone',
-            'url'=>'https://github.com/shaarli/Shaarli/wiki',
+            'url'=>'https://shaarli.readthedocs.io',
             'description'=>'Welcome to Shaarli! This is your first public bookmark. To edit or delete me, you must first login.
 
 To learn how to use Shaarli, consult the link "Help/documentation" at the bottom of this page.
 
 You use the community supported version of the original Shaarli project, by Sebastien Sauvage.',
             'private'=>0,
-            'linkdate'=> date('Ymd_His'),
+            'created'=> new DateTime(),
             'tags'=>'opensource software'
         );
-        $this->_links[$link['linkdate']] = $link;
+        $link['shorturl'] = link_small_hash($link['created'], $link['id']);
+        $this->links[1] = $link;
 
         $link = array(
+            'id' => 0,
             'title'=>'My secret stuff... - Pastebin.com',
             'url'=>'http://sebsauvage.net/paste/?8434b27936c09649#bR7XsXhoTiLcqCpQbmOpBi3rq2zzQUC5hBI7ZT1O3x8=',
             'description'=>'Shhhh! I\'m a private link only YOU can see. You can delete me too.',
             'private'=>1,
-            'linkdate'=> date('Ymd_His', strtotime('-1 minute')),
-            'tags'=>'secretstuff'
+            'created'=> new DateTime('1 minute ago'),
+            'tags'=>'secretstuff',
         );
-        $this->_links[$link['linkdate']] = $link;
+        $link['shorturl'] = link_small_hash($link['created'], $link['id']);
+        $this->links[0] = $link;
 
         // Write database to disk
-        $this->writeDB();
+        $this->write();
     }
 
     /**
      * Reads database from disk to memory
      */
-    private function _readDB()
+    private function read()
     {
-
         // Public links are hidden and user not logged in => nothing to show
-        if ($this->_hidePublicLinks && !$this->_loggedIn) {
-            $this->_links = array();
+        if ($this->hidePublicLinks && !$this->loggedIn) {
+            $this->links = array();
             return;
         }
 
-        // Read data
-        // Note that gzinflate is faster than gzuncompress.
-        // See: http://www.php.net/manual/en/function.gzdeflate.php#96439
-        $this->_links = array();
+        $this->links = FileUtils::readFlatDB($this->datastore, []);
 
-        if (file_exists($this->_datastore)) {
-            $this->_links = unserialize(gzinflate(base64_decode(
-                substr(file_get_contents($this->_datastore),
-                       strlen(self::$phpPrefix), -strlen(self::$phpSuffix)))));
-        }
-
-        // If user is not logged in, filter private links.
-        if (!$this->_loggedIn) {
-            $toremove = array();
-            foreach ($this->_links as $link) {
-                if ($link['private'] != 0) {
-                    $toremove[] = $link['linkdate'];
-                }
+        $toremove = array();
+        foreach ($this->links as $key => &$link) {
+            if (! $this->loggedIn && $link['private'] != 0) {
+                // Transition for not upgraded databases.
+                $toremove[] = $key;
+                continue;
             }
-            foreach ($toremove as $linkdate) {
-                unset($this->_links[$linkdate]);
-            }
-        }
-
-        $this->_urls = array();
-        foreach ($this->_links as &$link) {
-            // Keep the list of the mapping URLs-->linkdate up-to-date.
-            $this->_urls[$link['url']] = $link['linkdate'];
 
             // Sanitize data fields.
             sanitizeLink($link);
 
             // Remove private tags if the user is not logged in.
-            if (! $this->_loggedIn) {
-                $link['tags'] = preg_replace('/(^| )\.[^($| )]+/', '', $link['tags']);
+            if (! $this->loggedIn) {
+                $link['tags'] = preg_replace('/(^|\s+)\.[^($|\s)]+\s*/', ' ', $link['tags']);
             }
 
             // Do not use the redirector for internal links (Shaarli note URL starting with a '?').
-            if (!empty($this->_redirector) && !startsWith($link['url'], '?')) {
-                $link['real_url'] = $this->_redirector . urlencode($link['url']);
+            if (!empty($this->redirector) && !startsWith($link['url'], '?')) {
+                $link['real_url'] = $this->redirector;
+                if ($this->redirectorEncode) {
+                    $link['real_url'] .= urlencode(unescape($link['url']));
+                } else {
+                    $link['real_url'] .= $link['url'];
+                }
             }
             else {
                 $link['real_url'] = $link['url'];
             }
+
+            // To be able to load links before running the update, and prepare the update
+            if (! isset($link['created'])) {
+                $link['id'] = $link['linkdate'];
+                $link['created'] = DateTime::createFromFormat(self::LINK_DATE_FORMAT, $link['linkdate']);
+                if (! empty($link['updated'])) {
+                    $link['updated'] = DateTime::createFromFormat(self::LINK_DATE_FORMAT, $link['updated']);
+                }
+                $link['shorturl'] = smallHash($link['linkdate']);
+            }
         }
+
+        // If user is not logged in, filter private links.
+        foreach ($toremove as $offset) {
+            unset($this->links[$offset]);
+        }
+
+        $this->reorder();
     }
 
     /**
@@ -291,21 +344,9 @@ You use the community supported version of the original Shaarli project, by Seba
      *
      * @throws IOException the datastore is not writable
      */
-    private function writeDB()
+    private function write()
     {
-        if (is_file($this->_datastore) && !is_writeable($this->_datastore)) {
-            // The datastore exists but is not writeable
-            throw new IOException($this->_datastore);
-        } else if (!is_file($this->_datastore) && !is_writeable(dirname($this->_datastore))) {
-            // The datastore does not exist and its parent directory is not writeable
-            throw new IOException(dirname($this->_datastore));
-        }
-
-        file_put_contents(
-            $this->_datastore,
-            self::$phpPrefix.base64_encode(gzdeflate(serialize($this->_links))).self::$phpSuffix
-        );
-
+        FileUtils::writeFlatDB($this->datastore, $this->links);
     }
 
     /**
@@ -313,14 +354,14 @@ You use the community supported version of the original Shaarli project, by Seba
      *
      * @param string $pageCacheDir page cache directory
      */
-    public function savedb($pageCacheDir)
+    public function save($pageCacheDir)
     {
-        if (!$this->_loggedIn) {
+        if (!$this->loggedIn) {
             // TODO: raise an Exception instead
             die('You are not authorized to change the database.');
         }
 
-        $this->writeDB();
+        $this->write();
 
         invalidateCaches($pageCacheDir);
     }
@@ -334,8 +375,8 @@ You use the community supported version of the original Shaarli project, by Seba
      */
     public function getLinkFromUrl($url)
     {
-        if (isset($this->_urls[$url])) {
-            return $this->_links[$this->_urls[$url]];
+        if (isset($this->urls[$url])) {
+            return $this->links[$this->urls[$url]];
         }
         return false;
     }
@@ -352,7 +393,7 @@ You use the community supported version of the original Shaarli project, by Seba
     public function filterHash($request)
     {
         $request = substr($request, 0, 6);
-        $linkFilter = new LinkFilter($this->_links);
+        $linkFilter = new LinkFilter($this->links);
         return $linkFilter->filter(LinkFilter::$FILTER_HASH, $request);
     }
 
@@ -364,7 +405,7 @@ You use the community supported version of the original Shaarli project, by Seba
      * @return array list of shaare found.
      */
     public function filterDay($request) {
-        $linkFilter = new LinkFilter($this->_links);
+        $linkFilter = new LinkFilter($this->links);
         return $linkFilter->filter(LinkFilter::$FILTER_DAY, $request);
     }
 
@@ -375,58 +416,85 @@ You use the community supported version of the original Shaarli project, by Seba
      *                                - searchtags: list of tags
      *                                - searchterm: term search
      * @param bool   $casesensitive Optional: Perform case sensitive filter
-     * @param bool   $privateonly   Optional: Returns private links only if true.
+     * @param string $visibility    return only all/private/public links
+     * @param string $untaggedonly  return only untagged links
      *
      * @return array filtered links, all links if no suitable filter was provided.
      */
-    public function filterSearch($filterRequest = array(), $casesensitive = false, $privateonly = false)
+    public function filterSearch($filterRequest = array(), $casesensitive = false, $visibility = 'all', $untaggedonly = false)
     {
         // Filter link database according to parameters.
-        $searchtags = !empty($filterRequest['searchtags']) ? escape($filterRequest['searchtags']) : '';
-        $searchterm = !empty($filterRequest['searchterm']) ? escape($filterRequest['searchterm']) : '';
+        $searchtags = isset($filterRequest['searchtags']) ? escape($filterRequest['searchtags']) : '';
+        $searchterm = isset($filterRequest['searchterm']) ? escape($filterRequest['searchterm']) : '';
 
-        // Search tags + fullsearch.
-        if (empty($type) && ! empty($searchtags) && ! empty($searchterm)) {
-            $type = LinkFilter::$FILTER_TAG | LinkFilter::$FILTER_TEXT;
-            $request = array($searchtags, $searchterm);
-        }
-        // Search by tags.
-        elseif (! empty($searchtags)) {
-            $type = LinkFilter::$FILTER_TAG;
-            $request = $searchtags;
-        }
-        // Fulltext search.
-        elseif (! empty($searchterm)) {
-            $type = LinkFilter::$FILTER_TEXT;
-            $request = $searchterm;
-        }
-        // Otherwise, display without filtering.
-        else {
-            $type = '';
-            $request = '';
-        }
+        // Search tags + fullsearch - blank string parameter will return all links.
+        $type = LinkFilter::$FILTER_TAG | LinkFilter::$FILTER_TEXT; // == "vuotext"
+        $request = [$searchtags, $searchterm];
 
-        $linkFilter = new LinkFilter($this->_links);
-        return $linkFilter->filter($type, $request, $casesensitive, $privateonly);
+        $linkFilter = new LinkFilter($this);
+        return $linkFilter->filter($type, $request, $casesensitive, $visibility, $untaggedonly);
     }
 
     /**
-     * Returns the list of all tags
-     * Output: associative array key=tags, value=0
+     * Returns the list tags appearing in the links with the given tags
+     * @param $filteringTags: tags selecting the links to consider
+     * @param $visibility: process only all/private/public links
+     * @return: a tag=>linksCount array
      */
-    public function allTags()
+    public function linksCountPerTag($filteringTags = [], $visibility = 'all')
     {
+        $links = empty($filteringTags) ? $this->links : $this->filterSearch(['searchtags' => $filteringTags], false, $visibility);
         $tags = array();
-        foreach ($this->_links as $link) {
-            foreach (explode(' ', $link['tags']) as $tag) {
-                if (!empty($tag)) {
-                    $tags[$tag] = (empty($tags[$tag]) ? 1 : $tags[$tag] + 1);
+        $caseMapping = array();
+        foreach ($links as $link) {
+            foreach (preg_split('/\s+/', $link['tags'], 0, PREG_SPLIT_NO_EMPTY) as $tag) {
+                if (empty($tag)) {
+                    continue;
                 }
+                // The first case found will be displayed.
+                if (!isset($caseMapping[strtolower($tag)])) {
+                    $caseMapping[strtolower($tag)] = $tag;
+                    $tags[$caseMapping[strtolower($tag)]] = 0;
+                }
+                $tags[$caseMapping[strtolower($tag)]]++;
             }
         }
         // Sort tags by usage (most used tag first)
         arsort($tags);
         return $tags;
+    }
+
+    /**
+     * Rename or delete a tag across all links.
+     *
+     * @param string $from Tag to rename
+     * @param string $to   New tag. If none is provided, the from tag will be deleted
+     *
+     * @return array|bool List of altered links or false on error
+     */
+    public function renameTag($from, $to)
+    {
+        if (empty($from)) {
+            return false;
+        }
+        $delete = empty($to);
+        // True for case-sensitive tag search.
+        $linksToAlter = $this->filterSearch(['searchtags' => $from], true);
+        foreach($linksToAlter as $key => &$value)
+        {
+            $tags = preg_split('/\s+/', trim($value['tags']));
+            if (($pos = array_search($from, $tags)) !== false) {
+                if ($delete) {
+                    unset($tags[$pos]); // Remove tag.
+                } else {
+                    $tags[$pos] = trim($to);
+                }
+                $value['tags'] = trim(implode(' ', array_unique($tags)));
+                $this[$value['id']] = $value;
+            }
+        }
+
+        return $linksToAlter;
     }
 
     /**
@@ -436,12 +504,64 @@ You use the community supported version of the original Shaarli project, by Seba
     public function days()
     {
         $linkDays = array();
-        foreach (array_keys($this->_links) as $day) {
-            $linkDays[substr($day, 0, 8)] = 0;
+        foreach ($this->links as $link) {
+            $linkDays[$link['created']->format('Ymd')] = 0;
         }
         $linkDays = array_keys($linkDays);
         sort($linkDays);
 
         return $linkDays;
+    }
+
+    /**
+     * Reorder links by creation date (newest first).
+     *
+     * Also update the urls and ids mapping arrays.
+     *
+     * @param string $order ASC|DESC
+     */
+    public function reorder($order = 'DESC')
+    {
+        $order = $order === 'ASC' ? -1 : 1;
+        // Reorder array by dates.
+        usort($this->links, function($a, $b) use ($order) {
+            return $a['created'] < $b['created'] ? 1 * $order : -1 * $order;
+        });
+
+        $this->urls = array();
+        $this->ids = array();
+        foreach ($this->links as $key => $link) {
+            $this->urls[$link['url']] = $key;
+            $this->ids[$link['id']] = $key;
+        }
+    }
+
+    /**
+     * Return the next key for link creation.
+     * E.g. If the last ID is 597, the next will be 598.
+     *
+     * @return int next ID.
+     */
+    public function getNextId()
+    {
+        if (!empty($this->ids)) {
+            return max(array_keys($this->ids)) + 1;
+        }
+        return 0;
+    }
+
+    /**
+     * Returns a link offset in links array from its unique ID.
+     *
+     * @param int $id Persistent ID of a link.
+     *
+     * @return int Real offset in local array, or null if doesn't exist.
+     */
+    protected function getLinkOffset($id)
+    {
+        if (isset($this->ids[$id])) {
+            return $this->ids[$id];
+        }
+        return null;
     }
 }

@@ -4,9 +4,13 @@
  */
 class ApplicationUtils
 {
+    /**
+     * @var string File containing the current version
+     */
+    public static $VERSION_FILE = 'shaarli_version.php';
+
     private static $GIT_URL = 'https://raw.githubusercontent.com/shaarli/Shaarli';
-    private static $GIT_BRANCHES = array('master', 'stable');
-    private static $VERSION_FILE = 'shaarli_version.php';
+    private static $GIT_BRANCHES = array('latest', 'stable');
     private static $VERSION_START_TAG = '<?php /* ';
     private static $VERSION_END_TAG = ' */ ?>';
 
@@ -14,6 +18,9 @@ class ApplicationUtils
      * Gets the latest version code from the Git repository
      *
      * The code is read from the raw content of the version file on the Git server.
+     *
+     * @param string $url     URL to reach to get the latest version.
+     * @param int    $timeout Timeout to check the URL (in seconds).
      *
      * @return mixed the version code from the repository if available, else 'false'
      */
@@ -24,6 +31,30 @@ class ApplicationUtils
         if (strpos($headers[0], '200 OK') === false) {
             error_log('Failed to retrieve ' . $url);
             return false;
+        }
+
+        return $data;
+    }
+
+    /**
+     * Retrieve the version from a remote URL or a file.
+     *
+     * @param string $remote  URL or file to fetch.
+     * @param int    $timeout For URLs fetching.
+     *
+     * @return bool|string The version or false if it couldn't be retrieved.
+     */
+    public static function getVersion($remote, $timeout = 2)
+    {
+        if (startsWith($remote, 'http')) {
+            if (($data = static::getLatestGitVersionCode($remote, $timeout)) === false) {
+                return false;
+            }
+        } else {
+            if (! is_file($remote)) {
+                return false;
+            }
+            $data = file_get_contents($remote);
         }
 
         return str_replace(
@@ -49,6 +80,7 @@ class ApplicationUtils
      * @param int    $checkInterval  the minimum interval between update checks (in seconds
      * @param bool   $enableCheck    whether to check for new versions
      * @param bool   $isLoggedIn     whether the user is logged in
+     * @param string $branch         check update for the given branch
      *
      * @throws Exception an invalid branch has been set for update checks
      *
@@ -61,13 +93,10 @@ class ApplicationUtils
                                        $isLoggedIn,
                                        $branch='stable')
     {
-        if (! $isLoggedIn) {
-            // Do not check versions for visitors
-            return false;
-        }
-
-        if (empty($enableCheck)) {
-            // Do not check if the user doesn't want to
+        // Do not check versions for visitors
+        // Do not check if the user doesn't want to
+        // Do not check with dev version
+        if (! $isLoggedIn || empty($enableCheck) || $currentVersion === 'dev') {
             return false;
         }
 
@@ -89,7 +118,7 @@ class ApplicationUtils
 
         // Late Static Binding allows overriding within tests
         // See http://php.net/manual/en/language.oop5.late-static-bindings.php
-        $latestVersion = static::getLatestGitVersionCode(
+        $latestVersion = static::getVersion(
             self::$GIT_URL . '/' . $branch . '/' . self::$VERSION_FILE
         );
 
@@ -132,11 +161,11 @@ class ApplicationUtils
     /**
      * Checks Shaarli has the proper access permissions to its resources
      *
-     * @param array $globalConfig The $GLOBALS['config'] array
+     * @param ConfigManager $conf Configuration Manager instance.
      *
      * @return array A list of the detected configuration issues
      */
-    public static function checkResourcePermissions($globalConfig)
+    public static function checkResourcePermissions($conf)
     {
         $errors = array();
 
@@ -145,19 +174,20 @@ class ApplicationUtils
             'application',
             'inc',
             'plugins',
-            $globalConfig['RAINTPL_TPL']
+            $conf->get('resource.raintpl_tpl'),
+            $conf->get('resource.raintpl_tpl').'/'.$conf->get('resource.theme'),
         ) as $path) {
             if (! is_readable(realpath($path))) {
                 $errors[] = '"'.$path.'" directory is not readable';
             }
         }
 
-        // Check cache and data directories are readable and writeable
+        // Check cache and data directories are readable and writable
         foreach (array(
-            $globalConfig['CACHEDIR'],
-            $globalConfig['DATADIR'],
-            $globalConfig['PAGECACHE'],
-            $globalConfig['RAINTPL_TMP']
+            $conf->get('resource.thumbnails_cache'),
+            $conf->get('resource.data_dir'),
+            $conf->get('resource.page_cache'),
+            $conf->get('resource.raintpl_tmp'),
         ) as $path) {
             if (! is_readable(realpath($path))) {
                 $errors[] = '"'.$path.'" directory is not readable';
@@ -167,13 +197,13 @@ class ApplicationUtils
             }
         }
 
-        // Check configuration files are readable and writeable
+        // Check configuration files are readable and writable
         foreach (array(
-            $globalConfig['CONFIG_FILE'],
-            $globalConfig['DATASTORE'],
-            $globalConfig['IPBANS_FILENAME'],
-            $globalConfig['LOG_FILE'],
-            $globalConfig['UPDATECHECK_FILENAME']
+            $conf->getConfigFileExt(),
+            $conf->get('resource.datastore'),
+            $conf->get('resource.ban_file'),
+            $conf->get('resource.log'),
+            $conf->get('resource.update_check'),
         ) as $path) {
             if (! is_file(realpath($path))) {
                 # the file may not exist yet
